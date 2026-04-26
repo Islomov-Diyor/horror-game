@@ -328,251 +328,7 @@ buildMonster();
 
 import { P, raiseNoise } from './player/index.js';
 
-// ═══════════════════════════════════════════════════════════════════
-//  AUDIO — trimmed essentials, spatial where it matters
-// ═══════════════════════════════════════════════════════════════════
-let AC = null;
-let masterGain = null;
-
-function initAudio() {
-  if (AC) return;
-  try {
-    AC = new (window.AudioContext || window.webkitAudioContext)();
-    AC.resume();
-    masterGain = AC.createGain();
-    masterGain.gain.value = state.userVolume;
-    masterGain.connect(AC.destination);
-  } catch (e) { AC = null; }
-}
-
-function osc(freq, type, vol, dur, dest) {
-  if (!AC) return;
-  const o = AC.createOscillator(), g = AC.createGain();
-  o.type = type; o.frequency.value = freq;
-  g.gain.setValueAtTime(vol, AC.currentTime);
-  g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + dur);
-  o.connect(g); g.connect(dest || masterGain);
-  o.start(); o.stop(AC.currentTime + dur);
-}
-function noise(vol, dur, lo, hi, dest) {
-  if (!AC) return;
-  const buf = AC.createBuffer(1, Math.max(1, Math.floor(AC.sampleRate * dur)), AC.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-  const s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
-  f.type = 'bandpass'; f.frequency.value = (lo + hi)/2; f.Q.value = 0.6;
-  g.gain.setValueAtTime(vol, AC.currentTime);
-  g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + dur);
-  s.buffer = buf; s.connect(f); f.connect(g); g.connect(dest || masterGain);
-  s.start();
-}
-
-// ── ambient drone (always on when game is running) ──
-let ambientNodes = [];
-function startAmbient() {
-  if (!AC) return;
-  stopAmbient();
-  const a = AC.createGain();
-  a.gain.value = 0.45;
-  a.connect(masterGain);
-  ambientNodes.push(a);
-  // two detuned saw drones
-  [38.0, 47.3].forEach((f, i) => {
-    const o = AC.createOscillator(), g = AC.createGain(), fl = AC.createBiquadFilter();
-    o.type = 'sawtooth'; o.frequency.value = f;
-    const lfo = AC.createOscillator(), lfoG = AC.createGain();
-    lfo.type = 'sine'; lfo.frequency.value = 0.08 + i*0.03; lfoG.gain.value = 1.2;
-    lfo.connect(lfoG); lfoG.connect(o.frequency);
-    fl.type = 'lowpass'; fl.frequency.value = 300;
-    g.gain.value = 0.06;
-    o.connect(fl); fl.connect(g); g.connect(a);
-    lfo.start(); o.start();
-    ambientNodes.push(o, lfo);
-  });
-}
-function stopAmbient() {
-  ambientNodes.forEach(n => { try { if (n.stop) n.stop(); } catch(e){} });
-  ambientNodes = [];
-}
-
-// ── tense layer (fades in when monster is close but not chasing) ──
-let tenseGain = null, tenseOsc = null;
-function startTenseLayer() {
-  if (!AC || tenseGain) return;
-  tenseGain = AC.createGain();
-  tenseGain.gain.value = 0.0;
-  tenseGain.connect(masterGain);
-  tenseOsc = AC.createOscillator();
-  tenseOsc.type = 'sawtooth';
-  tenseOsc.frequency.value = 55;
-  const flt = AC.createBiquadFilter();
-  flt.type = 'lowpass'; flt.frequency.value = 400;
-  tenseOsc.connect(flt); flt.connect(tenseGain);
-  tenseOsc.start();
-}
-function stopTenseLayer() {
-  if (tenseOsc) { try { tenseOsc.stop(); } catch(e){} tenseOsc = null; }
-  if (tenseGain) { try { tenseGain.disconnect(); } catch(e){} tenseGain = null; }
-}
-
-// ── chase layer (sharper strings when actively chased) ──
-let chaseGain = null, chaseOscs = [];
-function startChaseLayer() {
-  if (!AC || chaseGain) return;
-  chaseGain = AC.createGain();
-  chaseGain.gain.value = 0.0;
-  chaseGain.connect(masterGain);
-  [110, 146.8, 220].forEach(f => {
-    const o = AC.createOscillator();
-    o.type = 'sawtooth'; o.frequency.value = f;
-    const g = AC.createGain(); g.gain.value = 0.04;
-    const flt = AC.createBiquadFilter(); flt.type = 'bandpass'; flt.frequency.value = 600; flt.Q.value = 2.5;
-    o.connect(flt); flt.connect(g); g.connect(chaseGain);
-    o.start();
-    chaseOscs.push(o);
-  });
-}
-function stopChaseLayer() {
-  chaseOscs.forEach(o => { try { o.stop(); } catch(e){} });
-  chaseOscs = [];
-  if (chaseGain) { try { chaseGain.disconnect(); } catch(e){} chaseGain = null; }
-}
-
-// ── MONSTER SPATIAL AUDIO (panner) ──
-let monsterPanner = null, monsterBreathOsc = null, monsterBreathGain = null;
-function startMonsterSound() {
-  if (!AC || monsterPanner) return;
-  monsterPanner = AC.createPanner();
-  monsterPanner.panningModel = 'HRTF';
-  monsterPanner.distanceModel = 'inverse';
-  monsterPanner.refDistance = 1.5;
-  monsterPanner.maxDistance = 30;
-  monsterPanner.rolloffFactor = 2.0;
-  monsterPanner.connect(masterGain);
-  // breathing: filtered noise with LFO
-  const src = AC.createOscillator();
-  src.type = 'sawtooth';
-  src.frequency.value = 40;
-  monsterBreathGain = AC.createGain();
-  monsterBreathGain.gain.value = 0.0;
-  const flt = AC.createBiquadFilter();
-  flt.type = 'bandpass'; flt.frequency.value = 180; flt.Q.value = 3;
-  // LFO on breath gain for rhythmic inhale/exhale
-  const lfo = AC.createOscillator();
-  lfo.type = 'sine'; lfo.frequency.value = 0.6;
-  const lfoG = AC.createGain(); lfoG.gain.value = 0.08;
-  lfo.connect(lfoG); lfoG.connect(monsterBreathGain.gain);
-  src.connect(flt); flt.connect(monsterBreathGain); monsterBreathGain.connect(monsterPanner);
-  src.start(); lfo.start();
-  monsterBreathOsc = src;
-}
-function stopMonsterSound() {
-  if (monsterBreathOsc) { try { monsterBreathOsc.stop(); } catch(e){} monsterBreathOsc = null; }
-  if (monsterBreathGain) { try { monsterBreathGain.disconnect(); } catch(e){} monsterBreathGain = null; }
-  if (monsterPanner) { try { monsterPanner.disconnect(); } catch(e){} monsterPanner = null; }
-}
-function updateMonsterAudio(dist, camX, camZ, camYaw) {
-  if (!AC || !monsterPanner) return;
-  // set listener position/orientation to camera
-  if (AC.listener.positionX) {
-    AC.listener.positionX.value = camX;
-    AC.listener.positionY.value = 1.7;
-    AC.listener.positionZ.value = camZ;
-    AC.listener.forwardX.value = -Math.sin(camYaw);
-    AC.listener.forwardY.value = 0;
-    AC.listener.forwardZ.value = -Math.cos(camYaw);
-    AC.listener.upX.value = 0; AC.listener.upY.value = 1; AC.listener.upZ.value = 0;
-  } else if (AC.listener.setPosition) {
-    AC.listener.setPosition(camX, 1.7, camZ);
-    AC.listener.setOrientation(-Math.sin(camYaw), 0, -Math.cos(camYaw), 0, 1, 0);
-  }
-  if (monsterPanner.positionX) {
-    monsterPanner.positionX.value = MONSTER.x;
-    monsterPanner.positionY.value = 1.4;
-    monsterPanner.positionZ.value = MONSTER.z;
-  } else if (monsterPanner.setPosition) {
-    monsterPanner.setPosition(MONSTER.x, 1.4, MONSTER.z);
-  }
-  // breathing volume ramps up as monster gets close
-  if (monsterBreathGain) {
-    const target = MONSTER.spawned
-      ? Math.max(0, Math.min(0.6, (12 - dist) / 12)) * (MONSTER.state === 'chase' ? 1.4 : 1.0)
-      : 0;
-    monsterBreathGain.gain.setTargetAtTime(target, AC.currentTime, 0.3);
-  }
-}
-
-// ── one-shot SFX ──
-function heartbeat(v) {
-  osc(52, 'sine', v, 0.1);
-  setTimeout(() => osc(42, 'sine', v*0.6, 0.08), 130);
-}
-function keyPickupSound() {
-  osc(880, 'sine', 0.18, 0.12);
-  setTimeout(() => osc(1320, 'sine', 0.14, 0.15), 80);
-  setTimeout(() => osc(1760, 'sine', 0.1,  0.2),  180);
-}
-function batteryPickupSound() {
-  osc(660, 'triangle', 0.14, 0.15);
-  setTimeout(() => osc(990, 'triangle', 0.1, 0.2), 90);
-}
-function notePickupSound() {
-  noise(0.08, 0.25, 400, 2400);
-}
-function doorOpenSound() {
-  for (let i = 0; i < 6; i++) setTimeout(() => osc(200+i*80, 'sawtooth', 0.08, 0.3), i*60);
-  setTimeout(() => { for (let i = 0; i < 4; i++) setTimeout(() => osc(440+i*220, 'sine', 0.12, 0.4), i*100); }, 400);
-}
-function flashClick() {
-  osc(1400, 'square', 0.04, 0.03);
-}
-function lockerClose() {
-  noise(0.1, 0.2, 80, 500);
-  setTimeout(() => osc(120, 'sine', 0.08, 0.15), 60);
-}
-function chaseSting() {
-  for (let i = 0; i < 4; i++) {
-    const o = AC ? AC.createOscillator() : null;
-    if (!o) return;
-    const g = AC.createGain();
-    o.type = i < 2 ? 'sawtooth' : 'square';
-    const fStart = 180 + i * 40 + Math.random() * 60;
-    o.frequency.setValueAtTime(fStart, AC.currentTime);
-    o.frequency.exponentialRampToValueAtTime(25, AC.currentTime + 1.8);
-    g.gain.setValueAtTime(0.35 / (i+1), AC.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + 1.8);
-    o.connect(g); g.connect(masterGain);
-    o.start(); o.stop(AC.currentTime + 1.8);
-  }
-  noise(0.3, 0.5, 40, 600);
-}
-function deathScream() {
-  if (!AC) return;
-  const o = AC.createOscillator(), g = AC.createGain(), f = AC.createBiquadFilter();
-  o.type = 'sawtooth';
-  o.frequency.setValueAtTime(380, AC.currentTime);
-  o.frequency.linearRampToValueAtTime(820, AC.currentTime + 0.4);
-  o.frequency.linearRampToValueAtTime(180, AC.currentTime + 1.6);
-  f.type = 'bandpass'; f.frequency.value = 900; f.Q.value = 2;
-  g.gain.setValueAtTime(0, AC.currentTime);
-  g.gain.linearRampToValueAtTime(0.18, AC.currentTime + 0.2);
-  g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + 2.0);
-  o.connect(f); f.connect(g); g.connect(masterGain);
-  o.start(); o.stop(AC.currentTime + 2.0);
-}
-let footstepAlt = false;
-function monsterFootstep(dist) {
-  if (!AC || !monsterPanner) return;
-  const o = AC.createOscillator(), g = AC.createGain();
-  o.type = 'triangle';
-  o.frequency.value = footstepAlt ? 70 : 60;
-  footstepAlt = !footstepAlt;
-  const vol = Math.max(0.04, Math.min(0.35, (20 - dist) / 40));
-  g.gain.setValueAtTime(vol, AC.currentTime);
-  g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + 0.18);
-  o.connect(g); g.connect(monsterPanner);
-  o.start(); o.stop(AC.currentTime + 0.18);
-}
+import { initAudio, setMasterVolume, osc, noise, startAmbient, stopAmbient, startTenseLayer, stopTenseLayer, startChaseLayer, stopChaseLayer, startMonsterSound, stopMonsterSound, updateMonsterAudio, heartbeat, keyPickupSound, batteryPickupSound, notePickupSound, doorOpenSound, flashClick, lockerClose, chaseSting, deathScream, monsterFootstep, updateMusicMix } from './audio/manager.js';
 
 // ═══════════════════════════════════════════════════════════════════
 //  POST-PROCESSING — custom pipeline (no external examples)
@@ -1273,7 +1029,7 @@ function bindSettings() {
   document.getElementById('sSens').addEventListener('input', e => state.mouseSens = parseFloat(e.target.value));
   document.getElementById('sVol').addEventListener('input', e => {
     state.userVolume = parseFloat(e.target.value);
-    if (masterGain) masterGain.gain.value = state.userVolume;
+    setMasterVolume(state.userVolume);
   });
   document.getElementById('sBright').addEventListener('input', e => {
     state.userBrightness = parseFloat(e.target.value);
@@ -1511,33 +1267,6 @@ function updateKeyAndDoor(dt) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  DYNAMIC MUSIC MIX
-// ═══════════════════════════════════════════════════════════════════
-function updateMusicMix(dt) {
-  if (!AC) return;
-  const dist = MONSTER.spawned ? Math.hypot(P.x - MONSTER.x, P.z - MONSTER.z) : 99;
-  const isChase = MONSTER.state === 'chase';
-  const isInvestigate = MONSTER.state === 'investigate';
-  const tenseTarget = MONSTER.spawned && !isChase ? Math.max(0, Math.min(0.35, (15 - dist) / 15)) : 0;
-  const chaseTarget = isChase ? 0.35 : (isInvestigate ? 0.12 : 0);
-  if (tenseGain) tenseGain.gain.setTargetAtTime(tenseTarget, AC.currentTime, 0.5);
-  if (chaseGain) chaseGain.gain.setTargetAtTime(chaseTarget, AC.currentTime, 0.3);
-
-  // heartbeat when monster near or chasing
-  if (MONSTER.spawned && dist < 14) {
-    state.heartTimer += dt;
-    const rate = isChase ? 2.8 : Math.max(0.6, (15 - dist) / 7);
-    if (state.heartTimer > 0.85 / rate) {
-      heartbeat(Math.min(0.2, 0.08 + (10 - dist)/70));
-      state.heartTimer = 0;
-    }
-  }
-
-  // Chase CSS pulse
-  if (isChase) document.body.classList.add('chase');
-  else         document.body.classList.remove('chase');
-}
 
 // ═══════════════════════════════════════════════════════════════════
 //  state.game LOOP
@@ -1555,8 +1284,8 @@ function loop(now) {
     updateMonsterAI(dt);
     animateMonster(dt);
     updateDust(dt);
-    updateMonsterAudio(Math.hypot(P.x - MONSTER.x, P.z - MONSTER.z), P.x, P.z, P.yaw);
-    updateMusicMix(dt);
+    updateMonsterAudio(Math.hypot(P.x - MONSTER.x, P.z - MONSTER.z), P.x, P.z, P.yaw, MONSTER.x, MONSTER.z, MONSTER.spawned, MONSTER.state);
+    updateMusicMix(dt, MONSTER.spawned, MONSTER.state, MONSTER.x, MONSTER.z, P.x, P.z);
     updateInteractHud();
     // timer hud
     const s = Math.floor((Date.now() - state.levelStartTime)/1000);
