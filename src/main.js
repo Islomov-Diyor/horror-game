@@ -326,27 +326,7 @@ function animateMonster(dt) {
 
 buildMonster();
 
-// ═══════════════════════════════════════════════════════════════════
-//  PLAYER STATE
-// ═══════════════════════════════════════════════════════════════════
-const P = {
-  x: 0, y: 1.7, z: 0,
-  yaw: 0, pitch: 0,
-  keys: {},
-  hasKey: false,
-  stamina: 1.0,
-  battery: 1.0,
-  flashOn: false,
-  hiding: false,
-  hideSpot: null,
-  noteReading: false,
-  noteCurrent: null,
-  notesFoundThisLevel: 0,
-  notesTotalThisLevel: 0,
-  // sound emission — how recently player made noise (for AI hearing)
-  noiseLevel: 0,
-  bobPhase: 0,
-};
+import { P, raiseNoise } from './player/index.js';
 
 // ═══════════════════════════════════════════════════════════════════
 //  AUDIO — trimmed essentials, spatial where it matters
@@ -847,12 +827,6 @@ function updateNoteCount() {
   document.getElementById('noteCount').textContent = P.notesFoundThisLevel + ' / ' + P.notesTotalThisLevel;
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  NOISE (player makes noise when sprinting / opening flashlight)
-// ═══════════════════════════════════════════════════════════════════
-function raiseNoise(amount) {
-  P.noiseLevel = Math.max(P.noiseLevel, amount);
-}
 
 // ═══════════════════════════════════════════════════════════════════
 //  MONSTER AI
