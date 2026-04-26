@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "Bash(python -m http.server 8877)",
+      "Bash(node -e ' *)",
+      "Bash(curl -s http://localhost:8877)",
+      "mcp__plugin_playwright_playwright__browser_take_screenshot",
+      "mcp__plugin_playwright_playwright__browser_snapshot",
+      "mcp__plugin_playwright_playwright__browser_click",
+      "Bash(curl -s http://localhost:8878)",
+      "Bash(node -e \"require\\('http'\\).createServer\\(\\(q,r\\)=>{require\\('fs'\\).createReadStream\\('c:/Users/user/Desktop/horror ga e/index.html'\\).pipe\\(r.writeHead\\(200,{'Content-Type':'text/html'}\\)||r\\)}\\).listen\\(9001,\\(\\)=>console.log\\('up'\\)\\)\")",
+      "Read(//c/Users/user/.claude/projects/c--Users-user-Desktop-horror-ga-e/memory/**)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\user\\Desktop\\horror ga e\\docs\\superpowers",
+      "c:\\Users\\user\\.claude\\projects\\c--Users-user-Desktop-horror-ga-e\\memory"
+    ]
+  }
+}
