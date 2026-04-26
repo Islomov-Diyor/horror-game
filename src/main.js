@@ -243,52 +243,7 @@ const LEVEL_TEX = [
   { wall:'#3e2c15', wAcc:'#120806', wDirt:'rgba(60,5,5,.45)',   floor:'#1a1208', fAcc:'rgba(60,0,0,.4)',   ceil:'#2a1f15' },
   { wall:'#421510', wAcc:'#1a0302', wDirt:'rgba(120,10,10,.5)', floor:'#2a0a06', fAcc:'rgba(120,0,0,.55)', ceil:'#1a0604' },
 ];
-
-// ═══════════════════════════════════════════════════════════════════
-//  THREE.JS CORE
-// ═══════════════════════════════════════════════════════════════════
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0a0604);
-scene.fog = new THREE.FogExp2(0x0a0604, 0.030);
-
-const camera = new THREE.PerspectiveCamera(78, innerWidth/innerHeight, .05, 120);
-camera.rotation.order = 'YXZ';
-
-const cvEl = document.getElementById('c');
-const renderer = new THREE.WebGLRenderer({ canvas: cvEl, antialias: false, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
-renderer.setSize(innerWidth, innerHeight);
-renderer.outputEncoding = THREE.sRGBEncoding;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
-
-// ── AUDIO LISTENER (3D spatial) ─────────────────────
-const audioListener = new THREE.AudioListener();
-camera.add(audioListener);
-scene.add(camera);
-
-// ── LIGHTS ──────────────────────────────────────────
-const hemi    = new THREE.HemisphereLight(0xffd890, 0x221100, BASE_HEMI);
-scene.add(hemi);
-const ambient = new THREE.AmbientLight(0xffe2a0, BASE_AMBIENT);
-scene.add(ambient);
-const playerLight = new THREE.PointLight(0xffe4b0, BASE_PLAYER, 7);
-scene.add(playerLight);
-
-// ── FLASHLIGHT (SpotLight) ──────────────────────────
-const flashlight = new THREE.SpotLight(0xffeecc, 0, 18, Math.PI / 6.5, 0.35, 1.8);
-flashlight.position.set(0, 1.7, 0);
-scene.add(flashlight);
-const flashTarget = new THREE.Object3D();
-scene.add(flashTarget);
-flashlight.target = flashTarget;
-
-// ═══════════════════════════════════════════════════════════════════
-//  LEVEL OBJECT CONTAINER (cleared on level change)
-// ═══════════════════════════════════════════════════════════════════
-const levelGroup = new THREE.Group();
-scene.add(levelGroup);
-
+import { scene, camera, cvEl, renderer, audioListener, hemi, ambient, playerLight, flashlight, flashTarget, levelGroup } from './core/scene.js';
 function disposeNode(node) {
   node.traverse(child => {
     if (child.geometry) child.geometry.dispose();
