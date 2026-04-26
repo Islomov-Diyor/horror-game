@@ -704,133 +704,7 @@ window.addEventListener('resize', () => {
   resizeJs();
 });
 
-// ═══════════════════════════════════════════════════════════════════
-//  INPUT — keyboard, mouse, gamepad, mobile
-// ═══════════════════════════════════════════════════════════════════
-let canPointerLock = true;
-
-cvEl.addEventListener('click', () => {
-  if (state.game && !state.paused && !P.hiding && !P.noteReading) cvEl.requestPointerLock();
-});
-document.addEventListener('mousemove', e => {
-  if (!state.game || state.paused || P.noteReading || document.pointerLockElement !== cvEl) return;
-  P.yaw   -= (e.movementX || 0) * .0022 * state.mouseSens;
-  P.pitch -= (e.movementY || 0) * .0022 * state.mouseSens;
-  P.pitch  = Math.max(-1.1, Math.min(1.1, P.pitch));
-});
-
-document.addEventListener('keydown', e => {
-  if (e.code === 'Escape') {
-    if (P.noteReading) { closeNote(); return; }
-    if (state.game && !state.paused) { pauseGame(); return; }
-  }
-  if (e.code === 'KeyE') {
-    if (P.noteReading) { closeNote(); return; }
-    handleInteract();
-    return;
-  }
-  if (e.code === 'KeyF' && state.game && !state.paused) {
-    toggleFlashlight();
-    return;
-  }
-  P.keys[e.code] = true;
-});
-document.addEventListener('keyup', e => P.keys[e.code] = false);
-
-// Gamepad
-let gamepadIndex = -1;
-window.addEventListener('gamepadconnected', e => {
-  gamepadIndex = e.gamepad.index;
-  showHud('Gamepad ulandi: ' + e.gamepad.id, 3000);
-});
-window.addEventListener('gamepaddisconnected', () => { gamepadIndex = -1; });
-let gpPrev = { a: false, b: false, y: false, x: false, start: false, lb: false };
-function pollGamepad(dt) {
-  if (gamepadIndex < 0) return { mx: 0, mz: 0, sprint: false };
-  const gps = navigator.getGamepads ? navigator.getGamepads() : [];
-  const gp = gps[gamepadIndex];
-  if (!gp) return { mx: 0, mz: 0, sprint: false };
-  // left stick — move
-  const lx = Math.abs(gp.axes[0]) > 0.15 ? gp.axes[0] : 0;
-  const ly = Math.abs(gp.axes[1]) > 0.15 ? gp.axes[1] : 0;
-  // right stick — look
-  const rx = Math.abs(gp.axes[2]) > 0.12 ? gp.axes[2] : 0;
-  const ry = Math.abs(gp.axes[3]) > 0.12 ? gp.axes[3] : 0;
-  if (state.game && !state.paused && !P.noteReading) {
-    P.yaw   -= rx * dt * 2.4 * state.mouseSens;
-    P.pitch -= ry * dt * 2.0 * state.mouseSens;
-    P.pitch  = Math.max(-1.1, Math.min(1.1, P.pitch));
-  }
-  const sprint = gp.buttons[6]?.pressed || gp.buttons[10]?.pressed;
-  const a = !!gp.buttons[0]?.pressed, b = !!gp.buttons[1]?.pressed;
-  const y = !!gp.buttons[3]?.pressed, x = !!gp.buttons[2]?.pressed;
-  const start = !!gp.buttons[9]?.pressed;
-  if (a && !gpPrev.a) { handleInteract(); }
-  if (x && !gpPrev.x) { toggleFlashlight(); }
-  if (start && !gpPrev.start) {
-    if (P.noteReading) closeNote();
-    else if (state.game && !state.paused) pauseGame();
-    else if (state.paused) resumeGame();
-  }
-  gpPrev = { a, b, x, y, start, lb: false };
-  return { mx: lx, mz: ly, sprint: !!sprint };
-}
-
-// ── Mobile controls ──
-const JS = { active: false, x: 0, y: 0, id: -1, ox: 0, oy: 0 };
-let mobFlashPressed = false, mobSprintPressed = false;
-
-(function setupMobile() {
-  const isMob = /Android|iPhone|iPad|Touch/i.test(navigator.userAgent) ||
-    window.matchMedia('(pointer:coarse)').matches;
-  if (!isMob) return;
-  document.getElementById('mob').style.display = 'block';
-  const zone = document.getElementById('jZone'), knob = document.getElementById('jKnob'), R = 60;
-  zone.addEventListener('touchstart', e => {
-    e.preventDefault();
-    const t = e.changedTouches[0], rect = zone.getBoundingClientRect();
-    JS.active = true; JS.id = t.identifier; JS.ox = rect.left + R; JS.oy = rect.top + R;
-  }, { passive: false });
-  zone.addEventListener('touchmove', e => {
-    e.preventDefault();
-    for (const t of e.changedTouches) {
-      if (t.identifier !== JS.id) continue;
-      const dx = t.clientX - JS.ox, dy = t.clientY - JS.oy;
-      const d = Math.sqrt(dx*dx + dy*dy);
-      const nx = d > R ? (dx/d)*R : dx, ny = d > R ? (dy/d)*R : dy;
-      JS.x = nx / R; JS.y = ny / R;
-      knob.style.transform = `translate(calc(-50% + ${nx}px),calc(-50% + ${ny}px))`;
-    }
-  }, { passive: false });
-  ['touchend','touchcancel'].forEach(ev => zone.addEventListener(ev, e => {
-    for (const t of e.changedTouches) if (t.identifier === JS.id) {
-      JS.active = false; JS.x = 0; JS.y = 0;
-      knob.style.transform = 'translate(-50%,-50%)';
-    }
-  }));
-  const lz = document.getElementById('lZone');
-  let lA = false, lx = 0, ly = 0;
-  lz.addEventListener('touchstart', e => { e.preventDefault(); const t = e.changedTouches[0]; lx = t.clientX; ly = t.clientY; lA = true; }, { passive:false });
-  lz.addEventListener('touchmove', e => {
-    e.preventDefault(); if (!lA || !state.game || state.paused) return;
-    const t = e.changedTouches[0];
-    P.yaw   -= (t.clientX - lx) * .005 * state.mouseSens;
-    P.pitch -= (t.clientY - ly) * .005 * state.mouseSens;
-    P.pitch  = Math.max(-1.1, Math.min(1.1, P.pitch));
-    lx = t.clientX; ly = t.clientY;
-  }, { passive: false });
-  lz.addEventListener('touchend', () => lA = false);
-
-  document.getElementById('mobFlash').addEventListener('touchstart', e => {
-    e.preventDefault(); toggleFlashlight();
-  }, { passive: false });
-  document.getElementById('mobInteract').addEventListener('touchstart', e => {
-    e.preventDefault(); handleInteract();
-  }, { passive: false });
-  const sprintBtn = document.getElementById('mobSprint');
-  sprintBtn.addEventListener('touchstart', e => { e.preventDefault(); mobSprintPressed = true; }, { passive: false });
-  sprintBtn.addEventListener('touchend',   () => { mobSprintPressed = false; });
-})();
+import { setupInput, pollGamepad, JS, mobSprintPressed } from './input/index.js';
 
 // ═══════════════════════════════════════════════════════════════════
 //  FLASHLIGHT + BATTERY
@@ -1160,7 +1034,7 @@ function updatePlayer(dt) {
                    // no: simpler to just use forward/strafe from joystick
                  }
   // gamepad movement (overrides if stick pressed)
-  const gp = pollGamepad(dt);
+  const gp = pollGamepad(dt, P);
   if (Math.abs(gp.mx) > 0.01 || Math.abs(gp.mz) > 0.01) {
     mx = 0; mz = 0;
     mx += gp.mx * cY + gp.mz * (-sY);
@@ -1755,6 +1629,8 @@ document.getElementById('startScreen').addEventListener('click', e => {
   if (e.target.id === 'instructions') return;
   startGame();
 });
+
+setupInput(P, { toggleFlashlight, handleInteract, closeNote, pauseGame, resumeGame, showHud });
 
 // initial black render
 renderer.render(scene, camera);
