@@ -1,14 +1,5 @@
 import * as THREE from 'three';
-
-
-// ═══════════════════════════════════════════════════════════════════
-//  CONFIG
-// ═══════════════════════════════════════════════════════════════════
-const TILE = 3.5;
-const CH   = 3.5;
-const PLAYER_R = 0.32;
-const WALK_SPD = 3.4;
-const SPRINT_SPD = 6.2;
+import { TILE, CH, PLAYER_R, WALK_SPD, SPRINT_SPD, BASE_HEMI, BASE_AMBIENT, BASE_PLAYER, BASE_CEIL, BASE_FOG } from './core/config.js';
 
 // ═══════════════════════════════════════════════════════════════════
 //  LEVEL GRIDS — 5 hand-authored themes
@@ -375,12 +366,6 @@ camera.add(audioListener);
 scene.add(camera);
 
 // ── LIGHTS ──────────────────────────────────────────
-const BASE_HEMI    = 0.45;
-const BASE_AMBIENT = 0.22;
-const BASE_PLAYER  = 0.25;
-const BASE_CEIL    = 0.55;
-const BASE_FOG     = 0.030;
-
 const hemi    = new THREE.HemisphereLight(0xffd890, 0x221100, BASE_HEMI);
 scene.add(hemi);
 const ambient = new THREE.AmbientLight(0xffe2a0, BASE_AMBIENT);
