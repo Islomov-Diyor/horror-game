@@ -6,6 +6,7 @@ import { setGrid, MAP_W, MAP_H, getCurGW, getCurGH, getCurGrid, isWall, tileAt, 
 import { scene, camera, cvEl, renderer, audioListener, hemi, ambient, playerLight, flashlight, flashTarget, levelGroup } from './core/scene.js';
 import { LEVEL_TEX, wallTex, floorTex, ceilingTex, paperTex, signTex } from './world/textures.js';
 import { ceilingLights, lightPanels, registerClearCallback, disposeNode, clearLevel, buildLevelGeometry, buildDust, updateDust } from './world/builder.js';
+import { applyLevelLighting, updateFlicker } from './world/lighting.js';
 
 // ═══════════════════════════════════════════════════════════════════
 //  KEY, DOOR, PICKUPS, HIDING SPOTS, NOTES
@@ -1365,44 +1366,6 @@ function updatePlayer(dt) {
 //  LIGHTING — level settings + flicker
 // ═══════════════════════════════════════════════════════════════════
 
-function applyLevelLighting() {
-  const lv = LEVELS[state.currentLevel];
-  hemi.intensity    = BASE_HEMI    * lv.lm * state.userBrightness;
-  ambient.intensity = BASE_AMBIENT * lv.lm * state.userBrightness;
-  playerLight.intensity = BASE_PLAYER * lv.lm * state.userBrightness;
-  hemi.color.setHex(lv.ambientColor);
-  ceilingLights.forEach(l => l.intensity = BASE_CEIL * lv.lm * state.userBrightness);
-  scene.fog.color.setHex(lv.fogColor);
-  scene.background.setHex(lv.fogColor);
-  scene.fog.density = BASE_FOG * lv.fm;
-  // panel dimming
-  const pi = Math.max(0.15, lv.lm);
-  const r = Math.floor(0xcc * pi), gg = Math.floor(0xb0 * pi), b = Math.floor(0x80 * pi);
-  const col = (r << 16) | (gg << 8) | b;
-  lightPanels.forEach(p => p.material.color.setHex(col));
-}
-
-function updateFlicker(dt) {
-  state.flashTimer += dt;
-  const lv = LEVELS[state.currentLevel];
-  if (!state.flickering && state.flashTimer > state.nextFlicker) {
-    state.flickering = true;
-    state.flickerEnd = state.flashTimer + 0.08 + Math.random() * 0.22;
-    noise(0.05, 0.12, 80, 4000);
-  }
-  if (state.flickering) {
-    const on = Math.random() < 0.55;
-    const k = on ? 1 : 0.3;
-    ceilingLights.forEach(l => l.intensity = BASE_CEIL * lv.lm * state.userBrightness * k);
-    if (state.flashTimer > state.flickerEnd) {
-      state.flickering = false;
-      ceilingLights.forEach(l => l.intensity = BASE_CEIL * lv.lm * state.userBrightness);
-      state.flashTimer = 0;
-      state.nextFlicker = (10 + Math.random() * 14) / lv.flickerMul;
-    }
-  }
-}
-
 // ═══════════════════════════════════════════════════════════════════
 //  JUMPSCARE
 // ═══════════════════════════════════════════════════════════════════
@@ -1900,7 +1863,7 @@ function loop(now) {
   if (state.game && !state.paused && !P.noteReading) {
     updatePlayer(dt);
     updateFlashlight(dt);
-    updateFlicker(dt);
+    updateFlicker(dt, noise);
     updateKeyAndDoor(dt);
     updateMonsterAI(dt);
     animateMonster(dt);
