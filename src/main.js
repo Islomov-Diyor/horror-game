@@ -13,127 +13,7 @@ const LEVELS = [
   {n:5, name:"JAHANNAM", spd:4.0, lm:0.32, fm:2.15, flickerMul:3.2, fogColor:0x0a0202, ambientColor:0xaa3020},
 ];
 
-// ═══════════════════════════════════════════════════════════════════
-//  LEVEL-AWARE TILE STATE
-// ═══════════════════════════════════════════════════════════════════
-let CUR_GRID = LEVEL_GRIDS[0];
-let CUR_GW = CUR_GRID[0].length;
-let CUR_GH = CUR_GRID.length;
-let MAP_W = CUR_GW * TILE;
-let MAP_H = CUR_GH * TILE;
-
-function isWall(gx, gz) {
-  if (gx < 0 || gx >= CUR_GW || gz < 0 || gz >= CUR_GH) return true;
-  return CUR_GRID[gz][gx] === '1';
-}
-function tileAt(x, z) {
-  const gx = Math.floor((x + MAP_W / 2) / TILE);
-  const gz = Math.floor((z + MAP_H / 2) / TILE);
-  if (gx < 0 || gx >= CUR_GW || gz < 0 || gz >= CUR_GH) return '1';
-  return CUR_GRID[gz][gx] === '1' ? '1' : '0';
-}
-function inMap(x, z, r = PLAYER_R) {
-  return tileAt(x - r, z - r) === '0' &&
-         tileAt(x + r, z - r) === '0' &&
-         tileAt(x - r, z + r) === '0' &&
-         tileAt(x + r, z + r) === '0';
-}
-function tileCenter(gx, gz) {
-  return { x: (gx - CUR_GW / 2 + 0.5) * TILE, z: (gz - CUR_GH / 2 + 0.5) * TILE };
-}
-function worldToTile(x, z) {
-  return {
-    gx: Math.floor((x + MAP_W / 2) / TILE),
-    gz: Math.floor((z + MAP_H / 2) / TILE)
-  };
-}
-function findSpawnTile() {
-  for (let gz = 0; gz < CUR_GH; gz++) {
-    for (let gx = 0; gx < CUR_GW; gx++) {
-      if (CUR_GRID[gz][gx] === 'S') return { gx, gz };
-    }
-  }
-  // fallback: first floor
-  for (let gz = 0; gz < CUR_GH; gz++) {
-    for (let gx = 0; gx < CUR_GW; gx++) {
-      if (CUR_GRID[gz][gx] === '0') return { gx, gz };
-    }
-  }
-  return { gx: 1, gz: 1 };
-}
-function allFloorTiles() {
-  const a = [];
-  for (let gz = 1; gz < CUR_GH - 1; gz++) {
-    for (let gx = 1; gx < CUR_GW - 1; gx++) {
-      const c = CUR_GRID[gz][gx];
-      if (c === '0' || c === 'S') a.push({ gx, gz });
-    }
-  }
-  return a;
-}
-function pickFarFloorTile(excludes, minDist) {
-  const cand = [];
-  for (const t of allFloorTiles()) {
-    let ok = true;
-    for (const e of excludes) {
-      const d = Math.abs(t.gx - e.gx) + Math.abs(t.gz - e.gz);
-      if (d < minDist) { ok = false; break; }
-    }
-    if (ok) cand.push(t);
-  }
-  if (!cand.length) return allFloorTiles()[0] || { gx: 1, gz: 1 };
-  return cand[Math.floor(Math.random() * cand.length)];
-}
-function tilesAdjacentToWall() {
-  // for hiding spots: a floor tile that has at least one wall neighbor
-  const a = [];
-  for (const t of allFloorTiles()) {
-    const adj = [[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dz]) => isWall(t.gx+dx, t.gz+dz));
-    if (adj) a.push(t);
-  }
-  return a;
-}
-
-// ═══════════════════════════════════════════════════════════════════
-//  A* PATHFINDING
-// ═══════════════════════════════════════════════════════════════════
-function aStar(sx, sz, gx, gz) {
-  if (isWall(gx, gz) || isWall(sx, sz)) return null;
-  if (sx === gx && sz === gz) return [{ gx: sx, gz: sz }];
-  const key = (x, z) => x + '_' + z;
-  const openMap = new Map();
-  const closed = new Set();
-  const startNode = { gx: sx, gz: sz, g: 0, h: Math.abs(sx-gx)+Math.abs(sz-gz), parent: null };
-  openMap.set(key(sx, sz), startNode);
-  let iter = 0;
-  while (openMap.size && iter++ < 3000) {
-    // pick lowest f
-    let cur = null;
-    for (const n of openMap.values()) {
-      if (!cur || (n.g + n.h) < (cur.g + cur.h)) cur = n;
-    }
-    openMap.delete(key(cur.gx, cur.gz));
-    closed.add(key(cur.gx, cur.gz));
-    if (cur.gx === gx && cur.gz === gz) {
-      const path = [];
-      let n = cur;
-      while (n) { path.unshift({ gx: n.gx, gz: n.gz }); n = n.parent; }
-      return path;
-    }
-    for (const [dx, dz] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-      const nx = cur.gx + dx, nz = cur.gz + dz;
-      if (isWall(nx, nz)) continue;
-      if (closed.has(key(nx, nz))) continue;
-      const g = cur.g + 1;
-      const k = key(nx, nz);
-      const existing = openMap.get(k);
-      if (existing && existing.g <= g) continue;
-      openMap.set(k, { gx: nx, gz: nz, g, h: Math.abs(nx-gx)+Math.abs(nz-gz), parent: cur });
-    }
-  }
-  return null;
-}
-
+import { setGrid, MAP_W, MAP_H, getCurGW, getCurGH, getCurGrid, isWall, tileAt, inMap, tileCenter, worldToTile, findSpawnTile, allFloorTiles, pickFarFloorTile, tilesAdjacentToWall, aStar } from './world/map.js';
 // ═══════════════════════════════════════════════════════════════════
 //  PROCEDURAL TEXTURES
 // ═══════════════════════════════════════════════════════════════════
@@ -278,8 +158,8 @@ function buildLevelGeometry() {
   const wTex = wallTex(palette.wall, palette.wAcc, palette.wDirt);
   const fTex = floorTex(palette.floor, palette.fAcc);
   const cTex = ceilingTex(palette.ceil);
-  fTex.repeat.set(CUR_GW, CUR_GH);
-  cTex.repeat.set(CUR_GW, CUR_GH);
+  fTex.repeat.set(getCurGW(), getCurGH());
+  cTex.repeat.set(getCurGW(), getCurGH());
 
   const wMat = new THREE.MeshStandardMaterial({ map: wTex, roughness: 0.88, metalness: 0.04 });
   const fMat = new THREE.MeshStandardMaterial({ map: fTex, roughness: 0.96 });
@@ -296,9 +176,9 @@ function buildLevelGeometry() {
 
   // collect wall runs along X and Z to reduce draw calls a bit
   const wallGeo = new THREE.BoxGeometry(TILE, CH, TILE);
-  for (let gz = 0; gz < CUR_GH; gz++) {
-    for (let gx = 0; gx < CUR_GW; gx++) {
-      if (CUR_GRID[gz][gx] !== '1') continue;
+  for (let gz = 0; gz < getCurGH(); gz++) {
+    for (let gx = 0; gx < getCurGW(); gx++) {
+      if (getCurGrid()[gz][gx] !== '1') continue;
       const c = tileCenter(gx, gz);
       const wall = new THREE.Mesh(wallGeo, wMat);
       wall.position.set(c.x, CH/2, c.z);
@@ -309,9 +189,9 @@ function buildLevelGeometry() {
   // ceiling lights — scatter every few tiles in open areas
   const lightPanelMat = new THREE.MeshBasicMaterial({ color: 0xccb080 });
   const panelGeo = new THREE.BoxGeometry(1.6, 0.08, 0.6);
-  for (let gz = 1; gz < CUR_GH - 1; gz += 3) {
-    for (let gx = 1; gx < CUR_GW - 1; gx += 4) {
-      if (CUR_GRID[gz][gx] !== '0' && CUR_GRID[gz][gx] !== 'S') continue;
+  for (let gz = 1; gz < getCurGH() - 1; gz += 3) {
+    for (let gx = 1; gx < getCurGW() - 1; gx += 4) {
+      if (getCurGrid()[gz][gx] !== '0' && getCurGrid()[gz][gx] !== 'S') continue;
       const c = tileCenter(gx, gz);
       const pl = new THREE.PointLight(0xffe2a0, BASE_CEIL, 14, 2);
       pl.position.set(c.x, CH - 0.35, c.z);
@@ -2022,11 +1902,7 @@ function setBestTime(levelIdx, seconds) {
 // ═══════════════════════════════════════════════════════════════════
 function resetState() {
   clearLevel();
-  CUR_GRID = LEVEL_GRIDS[state.currentLevel];
-  CUR_GW = CUR_GRID[0].length;
-  CUR_GH = CUR_GRID.length;
-  MAP_W = CUR_GW * TILE;
-  MAP_H = CUR_GH * TILE;
+  setGrid(LEVEL_GRIDS[state.currentLevel]);
 
   buildLevelGeometry();
   buildDust();
