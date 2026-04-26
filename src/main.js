@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { TILE, CH, PLAYER_R, WALK_SPD, SPRINT_SPD, BASE_HEMI, BASE_AMBIENT, BASE_PLAYER, BASE_CEIL, BASE_FOG } from './core/config.js';
+import { state } from './core/state.js';
 
 // ═══════════════════════════════════════════════════════════════════
 //  LEVEL GRIDS — 5 hand-authored themes
@@ -109,7 +110,6 @@ const LEVELS = [
   {n:4, name:"CHUQUR",   spd:3.6, lm:0.44, fm:1.80, flickerMul:2.2, fogColor:0x080303, ambientColor:0x804030},
   {n:5, name:"JAHANNAM", spd:4.0, lm:0.32, fm:2.15, flickerMul:3.2, fogColor:0x0a0202, ambientColor:0xaa3020},
 ];
-let currentLevel = 0;
 
 // ═══════════════════════════════════════════════════════════════════
 //  LEVEL-AWARE TILE STATE
@@ -417,7 +417,7 @@ const ceilingLights = [];
 const lightPanels = [];
 
 function buildLevelGeometry() {
-  const palette = LEVEL_TEX[currentLevel];
+  const palette = LEVEL_TEX[state.currentLevel];
   const wTex = wallTex(palette.wall, palette.wAcc, palette.wDirt);
   const fTex = floorTex(palette.floor, palette.fAcc);
   const cTex = ceilingTex(palette.ceil);
@@ -962,10 +962,6 @@ const P = {
   noiseLevel: 0,
   bobPhase: 0,
 };
-let GAME = false, PAUSED = false;
-let startTime = 0, levelStartTime = 0, totalTime = 0;
-let flashTimer = 0, nextFlicker = 9, flickering = false, flickerEnd = 0;
-let jsTriggered = false;
 
 // ═══════════════════════════════════════════════════════════════════
 //  DUST particles (level-scoped — rebuilt on each level)
@@ -1006,7 +1002,6 @@ function updateDust(dt) {
 // ═══════════════════════════════════════════════════════════════════
 let AC = null;
 let masterGain = null;
-let userVolume = 0.7;
 
 function initAudio() {
   if (AC) return;
@@ -1014,7 +1009,7 @@ function initAudio() {
     AC = new (window.AudioContext || window.webkitAudioContext)();
     AC.resume();
     masterGain = AC.createGain();
-    masterGain.gain.value = userVolume;
+    masterGain.gain.value = state.userVolume;
     masterGain.connect(AC.destination);
   } catch (e) { AC = null; }
 }
@@ -1255,7 +1250,6 @@ function monsterFootstep(dist) {
 //          + chromatic aberration + scanline (intensified during chase)
 // ═══════════════════════════════════════════════════════════════════
 let fxRT = null, fxScene = null, fxCam = null, fxMat = null;
-let fxEnabled = true;
 
 function initPostFX() {
   const w = renderer.domElement.width;
@@ -1362,30 +1356,29 @@ window.addEventListener('resize', () => {
 // ═══════════════════════════════════════════════════════════════════
 //  INPUT — keyboard, mouse, gamepad, mobile
 // ═══════════════════════════════════════════════════════════════════
-let mouseSens = 1.0;
 let canPointerLock = true;
 
 cvEl.addEventListener('click', () => {
-  if (GAME && !PAUSED && !P.hiding && !P.noteReading) cvEl.requestPointerLock();
+  if (state.game && !state.paused && !P.hiding && !P.noteReading) cvEl.requestPointerLock();
 });
 document.addEventListener('mousemove', e => {
-  if (!GAME || PAUSED || P.noteReading || document.pointerLockElement !== cvEl) return;
-  P.yaw   -= (e.movementX || 0) * .0022 * mouseSens;
-  P.pitch -= (e.movementY || 0) * .0022 * mouseSens;
+  if (!state.game || state.paused || P.noteReading || document.pointerLockElement !== cvEl) return;
+  P.yaw   -= (e.movementX || 0) * .0022 * state.mouseSens;
+  P.pitch -= (e.movementY || 0) * .0022 * state.mouseSens;
   P.pitch  = Math.max(-1.1, Math.min(1.1, P.pitch));
 });
 
 document.addEventListener('keydown', e => {
   if (e.code === 'Escape') {
     if (P.noteReading) { closeNote(); return; }
-    if (GAME && !PAUSED) { pauseGame(); return; }
+    if (state.game && !state.paused) { pauseGame(); return; }
   }
   if (e.code === 'KeyE') {
     if (P.noteReading) { closeNote(); return; }
     handleInteract();
     return;
   }
-  if (e.code === 'KeyF' && GAME && !PAUSED) {
+  if (e.code === 'KeyF' && state.game && !state.paused) {
     toggleFlashlight();
     return;
   }
@@ -1412,9 +1405,9 @@ function pollGamepad(dt) {
   // right stick — look
   const rx = Math.abs(gp.axes[2]) > 0.12 ? gp.axes[2] : 0;
   const ry = Math.abs(gp.axes[3]) > 0.12 ? gp.axes[3] : 0;
-  if (GAME && !PAUSED && !P.noteReading) {
-    P.yaw   -= rx * dt * 2.4 * mouseSens;
-    P.pitch -= ry * dt * 2.0 * mouseSens;
+  if (state.game && !state.paused && !P.noteReading) {
+    P.yaw   -= rx * dt * 2.4 * state.mouseSens;
+    P.pitch -= ry * dt * 2.0 * state.mouseSens;
     P.pitch  = Math.max(-1.1, Math.min(1.1, P.pitch));
   }
   const sprint = gp.buttons[6]?.pressed || gp.buttons[10]?.pressed;
@@ -1425,8 +1418,8 @@ function pollGamepad(dt) {
   if (x && !gpPrev.x) { toggleFlashlight(); }
   if (start && !gpPrev.start) {
     if (P.noteReading) closeNote();
-    else if (GAME && !PAUSED) pauseGame();
-    else if (PAUSED) resumeGame();
+    else if (state.game && !state.paused) pauseGame();
+    else if (state.paused) resumeGame();
   }
   gpPrev = { a, b, x, y, start, lb: false };
   return { mx: lx, mz: ly, sprint: !!sprint };
@@ -1468,10 +1461,10 @@ let mobFlashPressed = false, mobSprintPressed = false;
   let lA = false, lx = 0, ly = 0;
   lz.addEventListener('touchstart', e => { e.preventDefault(); const t = e.changedTouches[0]; lx = t.clientX; ly = t.clientY; lA = true; }, { passive:false });
   lz.addEventListener('touchmove', e => {
-    e.preventDefault(); if (!lA || !GAME || PAUSED) return;
+    e.preventDefault(); if (!lA || !state.game || state.paused) return;
     const t = e.changedTouches[0];
-    P.yaw   -= (t.clientX - lx) * .005 * mouseSens;
-    P.pitch -= (t.clientY - ly) * .005 * mouseSens;
+    P.yaw   -= (t.clientX - lx) * .005 * state.mouseSens;
+    P.pitch -= (t.clientY - ly) * .005 * state.mouseSens;
     P.pitch  = Math.max(-1.1, Math.min(1.1, P.pitch));
     lx = t.clientX; ly = t.clientY;
   }, { passive: false });
@@ -1491,10 +1484,9 @@ let mobFlashPressed = false, mobSprintPressed = false;
 // ═══════════════════════════════════════════════════════════════════
 //  FLASHLIGHT + BATTERY
 // ═══════════════════════════════════════════════════════════════════
-let flashlightIntensity = 1.4;
 
 function toggleFlashlight() {
-  if (!GAME || PAUSED || P.hiding) return;
+  if (!state.game || state.paused || P.hiding) return;
   if (P.battery <= 0 && !P.flashOn) { showHud('BATAREYA TUGADI', 1600); return; }
   P.flashOn = !P.flashOn;
   flashClick();
@@ -1507,7 +1499,7 @@ function updateFlashlight(dt) {
     P.battery -= dt * 0.025; // ~40s to empty
     if (P.battery <= 0) { P.battery = 0; P.flashOn = false; flashClick(); showHud('BATAREYA TUGADI', 2000); }
   }
-  const target = (P.flashOn && !P.hiding) ? flashlightIntensity : 0;
+  const target = (P.flashOn && !P.hiding) ? state.flashlightIntensity : 0;
   flashlight.intensity += (target - flashlight.intensity) * Math.min(1, dt * 8);
   flashlight.position.set(P.x, P.y - 0.1, P.z);
   const fx = P.x - Math.sin(P.yaw) * Math.cos(P.pitch);
@@ -1564,7 +1556,7 @@ function exitHide() {
   P.hiding = false; P.hideSpot = null;
   lockerClose();
   document.getElementById('hideOverlay').style.display = 'none';
-  if (GAME && !PAUSED) cvEl.requestPointerLock();
+  if (state.game && !state.paused) cvEl.requestPointerLock();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1581,14 +1573,14 @@ function openNote(note) {
 function closeNote() {
   P.noteReading = false;
   document.getElementById('noteReader').style.display = 'none';
-  if (GAME && !PAUSED) cvEl.requestPointerLock();
+  if (state.game && !state.paused) cvEl.requestPointerLock();
 }
 
 // ═══════════════════════════════════════════════════════════════════
 //  INTERACTION (E / gamepad A / mobile button)
 // ═══════════════════════════════════════════════════════════════════
 function handleInteract() {
-  if (!GAME || PAUSED) return;
+  if (!state.game || state.paused) return;
   // In hide spot — exit
   if (P.hiding) { exitHide(); return; }
   // Nearby note
@@ -1611,7 +1603,7 @@ function handleInteract() {
 }
 
 function updateInteractHud() {
-  if (P.hiding || P.noteReading || PAUSED) {
+  if (P.hiding || P.noteReading || state.paused) {
     document.getElementById('interactHud').style.display = 'none';
     return;
   }
@@ -1689,7 +1681,7 @@ function monsterCanSeePlayer() {
 }
 
 function updateMonsterAI(dt) {
-  if (!GAME || jsTriggered || !MONSTER.spawned) return;
+  if (!state.game || state.jsTriggered || !MONSTER.spawned) return;
   const mx = MONSTER.x, mz = MONSTER.z;
   const px = P.x, pz = P.z;
   const dist = Math.hypot(px - mx, pz - mz);
@@ -1739,7 +1731,7 @@ function updateMonsterAI(dt) {
   }
 
   // ── Movement ──
-  const lv = LEVELS[currentLevel];
+  const lv = LEVELS[state.currentLevel];
   let speed = lv.spd;
   if (MONSTER.state === 'chase') speed *= 1.1;
   else if (MONSTER.state === 'investigate') speed *= 0.7;
@@ -1799,7 +1791,7 @@ function updateMonsterAI(dt) {
 //  PLAYER MOVEMENT
 // ═══════════════════════════════════════════════════════════════════
 function updatePlayer(dt) {
-  if (P.hiding || P.noteReading || PAUSED || !GAME) {
+  if (P.hiding || P.noteReading || state.paused || !state.game) {
     camera.position.set(P.x, P.y, P.z);
     camera.rotation.y = P.yaw;
     camera.rotation.x = P.pitch;
@@ -1861,15 +1853,14 @@ function updatePlayer(dt) {
 // ═══════════════════════════════════════════════════════════════════
 //  LIGHTING — level settings + flicker
 // ═══════════════════════════════════════════════════════════════════
-let userBrightness = 1.0;
 
 function applyLevelLighting() {
-  const lv = LEVELS[currentLevel];
-  hemi.intensity    = BASE_HEMI    * lv.lm * userBrightness;
-  ambient.intensity = BASE_AMBIENT * lv.lm * userBrightness;
-  playerLight.intensity = BASE_PLAYER * lv.lm * userBrightness;
+  const lv = LEVELS[state.currentLevel];
+  hemi.intensity    = BASE_HEMI    * lv.lm * state.userBrightness;
+  ambient.intensity = BASE_AMBIENT * lv.lm * state.userBrightness;
+  playerLight.intensity = BASE_PLAYER * lv.lm * state.userBrightness;
   hemi.color.setHex(lv.ambientColor);
-  ceilingLights.forEach(l => l.intensity = BASE_CEIL * lv.lm * userBrightness);
+  ceilingLights.forEach(l => l.intensity = BASE_CEIL * lv.lm * state.userBrightness);
   scene.fog.color.setHex(lv.fogColor);
   scene.background.setHex(lv.fogColor);
   scene.fog.density = BASE_FOG * lv.fm;
@@ -1881,22 +1872,22 @@ function applyLevelLighting() {
 }
 
 function updateFlicker(dt) {
-  flashTimer += dt;
-  const lv = LEVELS[currentLevel];
-  if (!flickering && flashTimer > nextFlicker) {
-    flickering = true;
-    flickerEnd = flashTimer + 0.08 + Math.random() * 0.22;
+  state.flashTimer += dt;
+  const lv = LEVELS[state.currentLevel];
+  if (!state.flickering && state.flashTimer > state.nextFlicker) {
+    state.flickering = true;
+    state.flickerEnd = state.flashTimer + 0.08 + Math.random() * 0.22;
     noise(0.05, 0.12, 80, 4000);
   }
-  if (flickering) {
+  if (state.flickering) {
     const on = Math.random() < 0.55;
     const k = on ? 1 : 0.3;
-    ceilingLights.forEach(l => l.intensity = BASE_CEIL * lv.lm * userBrightness * k);
-    if (flashTimer > flickerEnd) {
-      flickering = false;
-      ceilingLights.forEach(l => l.intensity = BASE_CEIL * lv.lm * userBrightness);
-      flashTimer = 0;
-      nextFlicker = (10 + Math.random() * 14) / lv.flickerMul;
+    ceilingLights.forEach(l => l.intensity = BASE_CEIL * lv.lm * state.userBrightness * k);
+    if (state.flashTimer > state.flickerEnd) {
+      state.flickering = false;
+      ceilingLights.forEach(l => l.intensity = BASE_CEIL * lv.lm * state.userBrightness);
+      state.flashTimer = 0;
+      state.nextFlicker = (10 + Math.random() * 14) / lv.flickerMul;
     }
   }
 }
@@ -1991,7 +1982,7 @@ function jsFrame(now) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  GAME OVER / LEVEL FLOW
+//  state.game OVER / LEVEL FLOW
 // ═══════════════════════════════════════════════════════════════════
 let hudTimer = null;
 function showHud(msg, ms = 3000) {
@@ -2007,8 +1998,8 @@ function fmtTime(s) {
 }
 
 function triggerGameOver() {
-  if (jsTriggered) return;
-  jsTriggered = true; GAME = false;
+  if (state.jsTriggered) return;
+  state.jsTriggered = true; state.game = false;
   deathScream();
   hemi.intensity = 0.05;
   ambient.intensity = 0.03;
@@ -2018,8 +2009,8 @@ function triggerGameOver() {
 }
 
 function showGameOver() {
-  const s = Math.floor((Date.now() - levelStartTime)/1000);
-  document.getElementById('goTime').textContent = `Level ${LEVELS[currentLevel].n} — ${fmtTime(s)}`;
+  const s = Math.floor((Date.now() - state.levelStartTime)/1000);
+  document.getElementById('goTime').textContent = `Level ${LEVELS[state.currentLevel].n} — ${fmtTime(s)}`;
   document.getElementById('gameOver').style.display = 'flex';
   document.getElementById('bottomBar').style.display = 'none';
   document.getElementById('levelHud').style.display = 'none';
@@ -2029,10 +2020,10 @@ function showGameOver() {
 }
 
 function levelComplete() {
-  if (!GAME) return;
-  GAME = false;
-  const s = Math.floor((Date.now() - levelStartTime)/1000);
-  totalTime += s;
+  if (!state.game) return;
+  state.game = false;
+  const s = Math.floor((Date.now() - state.levelStartTime)/1000);
+  state.totalTime += s;
   stopAmbient(); stopTenseLayer(); stopChaseLayer(); stopMonsterSound();
   document.body.classList.remove('chase');
   document.getElementById('bottomBar').style.display = 'none';
@@ -2040,17 +2031,17 @@ function levelComplete() {
   document.getElementById('timerHud').style.display = 'none';
   if (document.pointerLockElement === cvEl) document.exitPointerLock();
   // save best time
-  const prev = getBestTime(currentLevel);
+  const prev = getBestTime(state.currentLevel);
   const newBest = (prev === null || s < prev);
-  if (newBest) setBestTime(currentLevel, s);
-  if (currentLevel >= LEVELS.length - 1) {
+  if (newBest) setBestTime(state.currentLevel, s);
+  if (state.currentLevel >= LEVELS.length - 1) {
     document.getElementById('fwMsg').textContent =
-      `Barcha 5 levelni tugatdingiz!\nJami vaqt: ${fmtTime(totalTime)}\n\nEng yaxshi vaqtlar:\n` +
+      `Barcha 5 levelni tugatdingiz!\nJami vaqt: ${fmtTime(state.totalTime)}\n\nEng yaxshi vaqtlar:\n` +
       LEVELS.map((lv, i) => ` L${lv.n}: ${fmtTime(getBestTime(i)||0)}`).join('\n');
     document.getElementById('finalWin').style.display = 'flex';
   } else {
-    document.getElementById('lcTitle').textContent = `LEVEL ${LEVELS[currentLevel].n} TUGADI`;
-    let msg = `Vaqt: ${fmtTime(s)}\nXatlar: ${P.notesFoundThisLevel}/${P.notesTotalThisLevel}\nKeyingi level: ${LEVELS[currentLevel+1].name} (${LEVELS[currentLevel+1].n}/5)`;
+    document.getElementById('lcTitle').textContent = `LEVEL ${LEVELS[state.currentLevel].n} TUGADI`;
+    let msg = `Vaqt: ${fmtTime(s)}\nXatlar: ${P.notesFoundThisLevel}/${P.notesTotalThisLevel}\nKeyingi level: ${LEVELS[state.currentLevel+1].name} (${LEVELS[state.currentLevel+1].n}/5)`;
     document.getElementById('lcMsg').textContent = msg;
     document.getElementById('lcBest').textContent = newBest
       ? '★ YANGI REKORD!'
@@ -2061,21 +2052,21 @@ function levelComplete() {
 
 function nextLevel() {
   document.getElementById('levelComplete').style.display = 'none';
-  currentLevel++;
+  state.currentLevel++;
   resetState();
   cvEl.requestPointerLock();
 }
 
 function restartFromLevel1() {
   ['gameOver','levelComplete','finalWin'].forEach(id => document.getElementById(id).style.display = 'none');
-  currentLevel = 0;
-  totalTime = 0;
+  state.currentLevel = 0;
+  state.totalTime = 0;
   resetState();
   cvEl.requestPointerLock();
 }
 
 function quitToMenu() {
-  GAME = false; PAUSED = false;
+  state.game = false; state.paused = false;
   document.getElementById('pauseMenu').style.display = 'none';
   document.getElementById('startScreen').style.display = 'flex';
   document.getElementById('bottomBar').style.display = 'none';
@@ -2087,17 +2078,17 @@ function quitToMenu() {
 }
 
 function pauseGame() {
-  if (!GAME || PAUSED) return;
-  PAUSED = true;
+  if (!state.game || state.paused) return;
+  state.paused = true;
   document.getElementById('pauseMenu').style.display = 'flex';
   if (document.pointerLockElement === cvEl) document.exitPointerLock();
 }
 function resumeGame() {
-  if (!PAUSED) return;
-  PAUSED = false;
+  if (!state.paused) return;
+  state.paused = false;
   document.getElementById('pauseMenu').style.display = 'none';
   document.getElementById('settingsModal').style.display = 'none';
-  if (GAME) cvEl.requestPointerLock();
+  if (state.game) cvEl.requestPointerLock();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2105,11 +2096,11 @@ function resumeGame() {
 // ═══════════════════════════════════════════════════════════════════
 function openSettings() {
   // hydrate from stored values
-  document.getElementById('sSens').value = mouseSens;
-  document.getElementById('sVol').value = userVolume;
-  document.getElementById('sBright').value = userBrightness;
-  document.getElementById('sFx').value = fxEnabled ? '1' : '0';
-  document.getElementById('sFlash').value = flashlightIntensity;
+  document.getElementById('sSens').value = state.mouseSens;
+  document.getElementById('sVol').value = state.userVolume;
+  document.getElementById('sBright').value = state.userBrightness;
+  document.getElementById('sFx').value = state.fxEnabled ? '1' : '0';
+  document.getElementById('sFlash').value = state.flashlightIntensity;
   document.getElementById('settingsModal').style.display = 'flex';
 }
 function closeSettings() {
@@ -2118,34 +2109,34 @@ function closeSettings() {
 }
 document.addEventListener('DOMContentLoaded', () => {});
 function bindSettings() {
-  document.getElementById('sSens').addEventListener('input', e => mouseSens = parseFloat(e.target.value));
+  document.getElementById('sSens').addEventListener('input', e => state.mouseSens = parseFloat(e.target.value));
   document.getElementById('sVol').addEventListener('input', e => {
-    userVolume = parseFloat(e.target.value);
-    if (masterGain) masterGain.gain.value = userVolume;
+    state.userVolume = parseFloat(e.target.value);
+    if (masterGain) masterGain.gain.value = state.userVolume;
   });
   document.getElementById('sBright').addEventListener('input', e => {
-    userBrightness = parseFloat(e.target.value);
+    state.userBrightness = parseFloat(e.target.value);
     applyLevelLighting();
   });
   document.getElementById('sFx').addEventListener('change', e => {
-    fxEnabled = e.target.value === '1';
+    state.fxEnabled = e.target.value === '1';
   });
-  document.getElementById('sFlash').addEventListener('input', e => flashlightIntensity = parseFloat(e.target.value));
+  document.getElementById('sFlash').addEventListener('input', e => state.flashlightIntensity = parseFloat(e.target.value));
 }
 function loadSettings() {
   try {
     const j = JSON.parse(localStorage.getItem('br_settings') || '{}');
-    if (j.sens) mouseSens = j.sens;
-    if (j.vol !== undefined) userVolume = j.vol;
-    if (j.bright) userBrightness = j.bright;
-    if (j.fx !== undefined) fxEnabled = !!j.fx;
-    if (j.flash) flashlightIntensity = j.flash;
+    if (j.sens) state.mouseSens = j.sens;
+    if (j.vol !== undefined) state.userVolume = j.vol;
+    if (j.bright) state.userBrightness = j.bright;
+    if (j.fx !== undefined) state.fxEnabled = !!j.fx;
+    if (j.flash) state.flashlightIntensity = j.flash;
   } catch(e) {}
 }
 function saveSettings() {
   try {
     localStorage.setItem('br_settings', JSON.stringify({
-      sens: mouseSens, vol: userVolume, bright: userBrightness, fx: fxEnabled, flash: flashlightIntensity
+      sens: state.mouseSens, vol: state.userVolume, bright: state.userBrightness, fx: state.fxEnabled, flash: state.flashlightIntensity
     }));
   } catch(e) {}
 }
@@ -2174,7 +2165,7 @@ function setBestTime(levelIdx, seconds) {
 // ═══════════════════════════════════════════════════════════════════
 function resetState() {
   clearLevel();
-  CUR_GRID = LEVEL_GRIDS[currentLevel];
+  CUR_GRID = LEVEL_GRIDS[state.currentLevel];
   CUR_GW = CUR_GRID[0].length;
   CUR_GH = CUR_GRID.length;
   MAP_W = CUR_GW * TILE;
@@ -2221,7 +2212,7 @@ function resetState() {
       return Math.hypot(t.gx - SP.gx, t.gz - SP.gz) > 2;
     });
   shuffle(hideCandidates);
-  const numHiding = 3 + currentLevel;
+  const numHiding = 3 + state.currentLevel;
   for (let i = 0; i < Math.min(numHiding, hideCandidates.length); i++) {
     buildHidingSpot(hideCandidates[i].gx, hideCandidates[i].gz);
   }
@@ -2234,7 +2225,7 @@ function resetState() {
   hidingSpots.forEach(h => usedTiles.add(h.gx+'_'+h.gz));
   const batteryPool = floorTiles.filter(t => !usedTiles.has(t.gx+'_'+t.gz));
   shuffle(batteryPool);
-  const numBatteries = Math.max(2, 4 - Math.floor(currentLevel/2));
+  const numBatteries = Math.max(2, 4 - Math.floor(state.currentLevel/2));
   for (let i = 0; i < Math.min(numBatteries, batteryPool.length); i++) {
     buildBattery(batteryPool[i].gx, batteryPool[i].gz);
     usedTiles.add(batteryPool[i].gx+'_'+batteryPool[i].gz);
@@ -2270,15 +2261,15 @@ function resetState() {
   applyLevelLighting();
 
   // timers
-  flashTimer = 0;
-  nextFlicker = (10 + Math.random() * 8) / LEVELS[currentLevel].flickerMul;
-  flickering = false;
-  jsTriggered = false;
+  state.flashTimer = 0;
+  state.nextFlicker = (10 + Math.random() * 8) / LEVELS[state.currentLevel].flickerMul;
+  state.flickering = false;
+  state.jsTriggered = false;
 
   // HUD reset
   document.getElementById('keyHudNew').style.display = 'none';
   document.getElementById('levelHud').style.display = 'block';
-  document.getElementById('levelHud').textContent = `LEVEL ${LEVELS[currentLevel].n} / 5 — ${LEVELS[currentLevel].name}`;
+  document.getElementById('levelHud').textContent = `LEVEL ${LEVELS[state.currentLevel].n} / 5 — ${LEVELS[state.currentLevel].name}`;
   document.getElementById('timerHud').style.display = 'block';
   document.getElementById('bottomBar').style.display = 'flex';
   document.getElementById('hud').style.opacity = '0';
@@ -2288,11 +2279,11 @@ function resetState() {
   // audio
   if (AC) { startAmbient(); startTenseLayer(); startChaseLayer(); startMonsterSound(); }
 
-  levelStartTime = Date.now();
-  if (currentLevel === 0) startTime = levelStartTime;
-  GAME = true; PAUSED = false;
+  state.levelStartTime = Date.now();
+  if (state.currentLevel === 0) state.startTime = state.levelStartTime;
+  state.game = true; state.paused = false;
 
-  showHud(`LEVEL ${LEVELS[currentLevel].n} — kalitni top, eshikni och`, 5500);
+  showHud(`LEVEL ${LEVELS[state.currentLevel].n} — kalitni top, eshikni och`, 5500);
 }
 
 function shuffle(a) {
@@ -2307,7 +2298,7 @@ function shuffle(a) {
 //  KEY/DOOR INTERACTION (per-frame, called from main)
 // ═══════════════════════════════════════════════════════════════════
 function updateKeyAndDoor(dt) {
-  if (!GAME || PAUSED || jsTriggered) return;
+  if (!state.game || state.paused || state.jsTriggered) return;
 
   // Key visual
   if (keyGroup && keyGroup.visible) {
@@ -2378,11 +2369,11 @@ function updateMusicMix(dt) {
 
   // heartbeat when monster near or chasing
   if (MONSTER.spawned && dist < 14) {
-    heartTimer += dt;
+    state.heartTimer += dt;
     const rate = isChase ? 2.8 : Math.max(0.6, (15 - dist) / 7);
-    if (heartTimer > 0.85 / rate) {
+    if (state.heartTimer > 0.85 / rate) {
       heartbeat(Math.min(0.2, 0.08 + (10 - dist)/70));
-      heartTimer = 0;
+      state.heartTimer = 0;
     }
   }
 
@@ -2390,17 +2381,16 @@ function updateMusicMix(dt) {
   if (isChase) document.body.classList.add('chase');
   else         document.body.classList.remove('chase');
 }
-let heartTimer = 0;
 
 // ═══════════════════════════════════════════════════════════════════
-//  GAME LOOP
+//  state.game LOOP
 // ═══════════════════════════════════════════════════════════════════
 let last = 0, raf = 0;
 function loop(now) {
   raf = requestAnimationFrame(loop);
   const dt = Math.min((now - last)/1000, 0.05);
   last = now;
-  if (GAME && !PAUSED && !P.noteReading) {
+  if (state.game && !state.paused && !P.noteReading) {
     updatePlayer(dt);
     updateFlashlight(dt);
     updateFlicker(dt);
@@ -2412,11 +2402,11 @@ function loop(now) {
     updateMusicMix(dt);
     updateInteractHud();
     // timer hud
-    const s = Math.floor((Date.now() - levelStartTime)/1000);
+    const s = Math.floor((Date.now() - state.levelStartTime)/1000);
     document.getElementById('timerHud').textContent = `⏱ ${fmtTime(s)}   🗒 ${P.notesFoundThisLevel}/${P.notesTotalThisLevel}${P.hasKey?'   🔑':''}`;
   }
   // render
-  if (fxEnabled && fxMat) {
+  if (state.fxEnabled && fxMat) {
     fxMat.uniforms.time.value = now * 0.001;
     const chaseU = MONSTER.state === 'chase' ? 1.0 : (MONSTER.state === 'investigate' ? 0.25 : 0);
     fxMat.uniforms.chase.value += (chaseU - fxMat.uniforms.chase.value) * 0.06;
@@ -2437,8 +2427,8 @@ function startGame() {
   initAudio();
   document.getElementById('startScreen').style.display = 'none';
   cvEl.requestPointerLock();
-  currentLevel = 0;
-  totalTime = 0;
+  state.currentLevel = 0;
+  state.totalTime = 0;
   resetState();
   last = performance.now();
   if (!raf) loop(last);
