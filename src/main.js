@@ -10,6 +10,7 @@ import { applyLevelLighting, updateFlicker } from './world/lighting.js';
 import { keyGroup, doorGroup, hidingSpots, batteryPickups, notePickups, monsterWaypoints, NOTE_LORE, buildKey, buildDoor, buildHidingSpot, buildBattery, buildNote } from './world/collectibles.js';
 
 import { MONSTER, buildMonster, animateMonster, monsterSpawnBehindPlayer, updateMonsterAI, runJumpscare, resizeJs, setTriggerGameOver } from './monster/index.js';
+import { fxRT, fxScene, fxCam, fxMat, initPostFX, resizePostFX } from './core/postfx.js';
 
 // ═══════════════════════════════════════════════════════════════════
 //  state.game OVER / LEVEL FLOW
@@ -444,6 +445,16 @@ document.getElementById('startScreen').addEventListener('click', e => {
   if (e.target.tagName === 'BUTTON') return;
   if (e.target.id === 'instructions') return;
   startGame();
+});
+
+initPostFX();
+
+window.addEventListener('resize', () => {
+  renderer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  resizePostFX();
+  resizeJs();
 });
 
 setTriggerGameOver(triggerGameOver);
