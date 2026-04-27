@@ -10,9 +10,27 @@ import { scatterProps } from './world/props.js';
 import { startAmbience, stopAmbience, tickAmbience } from './audio/ambience.js';
 import { applyLevelLighting, updateFlicker } from './world/lighting.js';
 import { keyGroup, doorGroup, hidingSpots, batteryPickups, notePickups, monsterWaypoints, NOTE_LORE, buildKey, buildDoor, buildHidingSpot, buildBattery, buildNote } from './world/collectibles.js';
+import { initAudio, setMasterVolume, noise, osc, startAmbient, stopAmbient, startTenseLayer, stopTenseLayer, startChaseLayer, stopChaseLayer, startMonsterSound, stopMonsterSound, updateMonsterAudio, updateMusicMix, heartbeat, keyPickupSound, batteryPickupSound, notePickupSound, doorOpenSound, flashClick, lockerClose, chaseSting, deathScream, isAudioReady } from './audio/manager.js';
+import { JS, mobSprintPressed, pollGamepad, setupInput } from './input/index.js';
 
 import { MONSTER, buildMonster, animateMonster, monsterSpawnBehindPlayer, updateMonsterAI, runJumpscare, resizeJs, setTriggerGameOver } from './monster/index.js';
 import { fxRT, fxScene, fxCam, fxMat, initPostFX, resizePostFX } from './core/postfx.js';
+
+// ─── player state object ───────────────────────────────────────────
+const P = {
+  x: 0, y: 1.7, z: 0,
+  yaw: 0, pitch: 0,
+  hasKey: false,
+  stamina: 1.0,
+  battery: 1.0,
+  flashOn: false,
+  hiding: false, hideSpot: null,
+  noteReading: false, noteCurrent: null,
+  noiseLevel: 0,
+  notesTotalThisLevel: 0,
+  notesFoundThisLevel: 0,
+  sprintHeld: false,
+};
 
 // ═══════════════════════════════════════════════════════════════════
 //  state.game OVER / LEVEL FLOW
@@ -307,7 +325,7 @@ function resetState() {
   updateNoteCount();
 
   // audio
-  if (AC) { startAmbient(); startTenseLayer(); startChaseLayer(); startMonsterSound(); startAmbience(LEVELS[state.currentLevel]); }
+  if (isAudioReady()) { startAmbient(); startTenseLayer(); startChaseLayer(); startMonsterSound(); startAmbience(LEVELS[state.currentLevel]); }
 
   state.levelStartTime = Date.now();
   if (state.currentLevel === 0) state.startTime = state.levelStartTime;
@@ -384,6 +402,181 @@ function updateKeyAndDoor(dt) {
   }
 }
 
+
+// ═══════════════════════════════════════════════════════════════════
+//  FLASHLIGHT
+// ═══════════════════════════════════════════════════════════════════
+function toggleFlashlight() {
+  if (!state.game || state.paused || P.hiding) return;
+  if (P.battery <= 0 && !P.flashOn) { showHud('BATAREYA TUGADI', 1600); return; }
+  P.flashOn = !P.flashOn;
+  flashClick();
+  if (P.flashOn) P.noiseLevel = Math.max(P.noiseLevel, 0.4);
+}
+
+function updateFlashlight(dt) {
+  if (P.flashOn) {
+    P.battery -= dt * 0.025;
+    if (P.battery <= 0) { P.battery = 0; P.flashOn = false; flashClick(); showHud('BATAREYA TUGADI', 2000); }
+  }
+  const target = (P.flashOn && !P.hiding) ? state.flashlightIntensity : 0;
+  flashlight.intensity += (target - flashlight.intensity) * Math.min(1, dt * 8);
+  flashlight.position.set(P.x, P.y - 0.1, P.z);
+  const fx = P.x - Math.sin(P.yaw) * Math.cos(P.pitch);
+  const fy = P.y - 0.1 + Math.sin(P.pitch);
+  const fz = P.z - Math.cos(P.yaw) * Math.cos(P.pitch);
+  flashTarget.position.set(fx, fy, fz);
+  document.getElementById('batteryFill').style.width = (P.battery * 100).toFixed(0) + '%';
+  const fill = document.getElementById('batteryFill');
+  fill.style.background = P.battery < 0.2
+    ? 'linear-gradient(90deg,#cc2200,#ff6644)'
+    : 'linear-gradient(90deg,#ffcc22,#ffeeaa)';
+  document.getElementById('flashIco').querySelector('.label').textContent = '🔦 ' + (P.flashOn ? 'ON' : 'OFF');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  STAMINA
+// ═══════════════════════════════════════════════════════════════════
+function updateStamina(dt, sprinting, moving) {
+  if (sprinting && moving) {
+    P.stamina -= dt * 0.28;
+    if (P.stamina < 0) P.stamina = 0;
+  } else {
+    P.stamina += dt * (moving ? 0.12 : 0.22);
+    if (P.stamina > 1) P.stamina = 1;
+  }
+  const fill = document.getElementById('staminaFill');
+  fill.style.width = (P.stamina * 100).toFixed(0) + '%';
+  fill.style.background = P.stamina < 0.25
+    ? 'linear-gradient(90deg,#cc4422,#ff8866)'
+    : 'linear-gradient(90deg,#33dd77,#88ff99)';
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  PLAYER MOVEMENT
+// ═══════════════════════════════════════════════════════════════════
+function updatePlayer(dt) {
+  if (P.hiding || P.noteReading || state.paused || !state.game) {
+    camera.position.set(P.x, P.y, P.z);
+    camera.rotation.y = P.yaw;
+    camera.rotation.x = P.pitch;
+    playerLight.position.set(P.x, P.y, P.z);
+    return;
+  }
+  const sY = Math.sin(P.yaw), cY = Math.cos(P.yaw);
+  let mx = 0, mz = 0;
+  if (P.keys['KeyW'] || P.keys['ArrowUp'])    { mx -= sY; mz -= cY; }
+  if (P.keys['KeyS'] || P.keys['ArrowDown'])  { mx += sY; mz += cY; }
+  if (P.keys['KeyA'] || P.keys['ArrowLeft'])  { mx -= cY; mz += sY; }
+  if (P.keys['KeyD'] || P.keys['ArrowRight']) { mx += cY; mz -= sY; }
+  const gp = pollGamepad(dt, P);
+  if (Math.abs(gp.mx) > 0.01 || Math.abs(gp.mz) > 0.01) {
+    mx = gp.mx * cY + gp.mz * (-sY);
+    mz = gp.mx * (-sY) + gp.mz * (-cY);
+  }
+  if (JS.active) {
+    mx = JS.x * cY + JS.y * (-sY);
+    mz = JS.x * (-sY) + JS.y * (-cY);
+  }
+  const len = Math.sqrt(mx*mx + mz*mz);
+  const moving = len > 0.08;
+  const wantSprint = (P.keys['ShiftLeft'] || P.keys['ShiftRight'] || gp.sprint || mobSprintPressed);
+  const sprinting = wantSprint && moving && P.stamina > 0.02;
+  const speed = sprinting ? SPRINT_SPD : WALK_SPD;
+  if (moving) {
+    const invL = 1 / len;
+    const vx = mx * invL * speed * dt;
+    const vz = mz * invL * speed * dt;
+    if (inMap(P.x + vx, P.z, PLAYER_R)) P.x += vx;
+    if (inMap(P.x, P.z + vz, PLAYER_R)) P.z += vz;
+    P.bobPhase += dt * (sprinting ? 10 : 6);
+    P.y = 1.7 + Math.sin(P.bobPhase) * (sprinting ? 0.08 : 0.045);
+    if (sprinting) P.noiseLevel = Math.max(P.noiseLevel, 0.5);
+    else           P.noiseLevel = Math.max(P.noiseLevel, 0.04);
+  } else {
+    P.y += (1.7 - P.y) * Math.min(1, dt * 6);
+  }
+  camera.position.set(P.x, P.y, P.z);
+  camera.rotation.y = P.yaw;
+  camera.rotation.x = P.pitch;
+  playerLight.position.set(P.x, P.y, P.z);
+  updateStamina(dt, sprinting, moving);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  HIDING & NOTES
+// ═══════════════════════════════════════════════════════════════════
+function findNearestHideSpot() {
+  let best = null, bestD = 1.6;
+  for (const h of hidingSpots) {
+    const d = Math.hypot(P.x - h.worldX, P.z - h.worldZ);
+    if (d < bestD) { bestD = d; best = h; }
+  }
+  return best;
+}
+function enterHide(spot) {
+  P.hiding = true; P.hideSpot = spot; spot.occupied = true;
+  P.x = spot.worldX; P.z = spot.worldZ;
+  P.flashOn = false;
+  lockerClose();
+  document.getElementById('hideOverlay').style.display = 'flex';
+  if (document.pointerLockElement === cvEl) document.exitPointerLock();
+}
+function exitHide() {
+  if (!P.hiding) return;
+  if (P.hideSpot) P.hideSpot.occupied = false;
+  P.hiding = false; P.hideSpot = null;
+  lockerClose();
+  document.getElementById('hideOverlay').style.display = 'none';
+  if (state.game && !state.paused) cvEl.requestPointerLock();
+}
+function openNote(note) {
+  P.noteReading = true; P.noteCurrent = note;
+  document.getElementById('noteTitle').textContent = note.title;
+  document.getElementById('noteBody').textContent = note.text;
+  document.getElementById('noteReader').style.display = 'flex';
+  if (document.pointerLockElement === cvEl) document.exitPointerLock();
+}
+function closeNote() {
+  P.noteReading = false;
+  document.getElementById('noteReader').style.display = 'none';
+  if (state.game && !state.paused) cvEl.requestPointerLock();
+}
+function handleInteract() {
+  if (!state.game || state.paused) return;
+  if (P.hiding) { exitHide(); return; }
+  for (const n of notePickups) {
+    if (n.taken) continue;
+    if (Math.hypot(P.x - n.worldX, P.z - n.worldZ) < 1.0) {
+      n.taken = true; n.group.visible = false;
+      P.notesFoundThisLevel++;
+      updateNoteCount();
+      notePickupSound();
+      openNote(n);
+      return;
+    }
+  }
+  const h = findNearestHideSpot();
+  if (h && !h.occupied) { enterHide(h); return; }
+}
+function updateInteractHud() {
+  if (P.hiding || P.noteReading || state.paused) {
+    document.getElementById('interactHud').style.display = 'none'; return;
+  }
+  const hud = document.getElementById('interactHud');
+  for (const n of notePickups) {
+    if (n.taken) continue;
+    if (Math.hypot(P.x - n.worldX, P.z - n.worldZ) < 1.0) {
+      hud.textContent = "[ E ] — xatni o'qish"; hud.style.display = 'block'; return;
+    }
+  }
+  const h = findNearestHideSpot();
+  if (h && !h.occupied) { hud.textContent = '[ E ] — yashirinish'; hud.style.display = 'block'; return; }
+  hud.style.display = 'none';
+}
+function updateNoteCount() {
+  document.getElementById('noteCount').textContent = P.notesFoundThisLevel + ' / ' + P.notesTotalThisLevel;
+}
 
 // ═══════════════════════════════════════════════════════════════════
 //  state.game LOOP
