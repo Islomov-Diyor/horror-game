@@ -7,6 +7,7 @@ import { scene, camera, cvEl, renderer, audioListener, hemi, ambient, playerLigh
 import { LEVEL_TEX, wallTex, floorTex, ceilingTex, paperTex, signTex } from './world/textures.js';
 import { ceilingLights, lightPanels, registerClearCallback, disposeNode, clearLevel, buildLevelGeometry, buildDust, updateDust } from './world/builder.js';
 import { scatterProps } from './world/props.js';
+import { startAmbience, stopAmbience, tickAmbience } from './audio/ambience.js';
 import { applyLevelLighting, updateFlicker } from './world/lighting.js';
 import { keyGroup, doorGroup, hidingSpots, batteryPickups, notePickups, monsterWaypoints, NOTE_LORE, buildKey, buildDoor, buildHidingSpot, buildBattery, buildNote } from './world/collectibles.js';
 
@@ -36,7 +37,7 @@ function triggerGameOver() {
   hemi.intensity = 0.05;
   ambient.intensity = 0.03;
   ceilingLights.forEach(l => l.intensity = 0);
-  stopAmbient(); stopTenseLayer(); stopChaseLayer();
+  stopAmbient(); stopTenseLayer(); stopChaseLayer(); stopAmbience();
   setTimeout(() => runJumpscare(showGameOver), 260);
 }
 
@@ -56,7 +57,7 @@ function levelComplete() {
   state.game = false;
   const s = Math.floor((Date.now() - state.levelStartTime)/1000);
   state.totalTime += s;
-  stopAmbient(); stopTenseLayer(); stopChaseLayer(); stopMonsterSound();
+  stopAmbient(); stopTenseLayer(); stopChaseLayer(); stopMonsterSound(); stopAmbience();
   document.body.classList.remove('chase');
   document.getElementById('bottomBar').style.display = 'none';
   document.getElementById('levelHud').style.display = 'none';
@@ -105,7 +106,7 @@ function quitToMenu() {
   document.getElementById('levelHud').style.display = 'none';
   document.getElementById('timerHud').style.display = 'none';
   document.body.classList.remove('chase');
-  stopAmbient(); stopTenseLayer(); stopChaseLayer(); stopMonsterSound();
+  stopAmbient(); stopTenseLayer(); stopChaseLayer(); stopMonsterSound(); stopAmbience();
   if (document.pointerLockElement === cvEl) document.exitPointerLock();
 }
 
@@ -306,7 +307,7 @@ function resetState() {
   updateNoteCount();
 
   // audio
-  if (AC) { startAmbient(); startTenseLayer(); startChaseLayer(); startMonsterSound(); }
+  if (AC) { startAmbient(); startTenseLayer(); startChaseLayer(); startMonsterSound(); startAmbience(LEVELS[state.currentLevel]); }
 
   state.levelStartTime = Date.now();
   if (state.currentLevel === 0) state.startTime = state.levelStartTime;
@@ -396,6 +397,7 @@ function loop(now) {
     updatePlayer(dt);
     updateFlashlight(dt);
     updateFlicker(dt, noise);
+    tickAmbience(dt);
     updateKeyAndDoor(dt);
     updateMonsterAI(dt);
     animateMonster(dt);
