@@ -498,6 +498,17 @@ window.addEventListener('resize', () => {
 setTriggerGameOver(triggerGameOver);
 setupInput(P, { toggleFlashlight, handleInteract, closeNote, pauseGame, resumeGame, showHud });
 
+// expose functions needed by inline HTML onclick handlers
+window.startGame       = startGame;
+window.openSettings    = openSettings;
+window.closeSettings   = closeSettings;
+window.downloadGame    = downloadGame;
+window.restartFromLevel1 = restartFromLevel1;
+window.nextLevel       = nextLevel;
+window.quitToMenu      = quitToMenu;
+window.resumeGame      = resumeGame;
+window.pauseGame       = pauseGame;
+
 // initial black render
 renderer.render(scene, camera);
 
