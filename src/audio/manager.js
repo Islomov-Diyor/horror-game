@@ -167,9 +167,13 @@ export function updateMonsterAudio(dist, camX, camZ, camYaw, monX, monZ, monSpaw
   }
 }
 
+let _onHeartbeat = null;
+export function setHeartbeatCallback(fn) { _onHeartbeat = fn; }
+
 export function heartbeat(v) {
   osc(52, 'sine', v, 0.1);
   setTimeout(() => osc(42, 'sine', v*0.6, 0.08), 130);
+  if (_onHeartbeat) _onHeartbeat();
 }
 export function keyPickupSound() {
   osc(880, 'sine', 0.18, 0.12);

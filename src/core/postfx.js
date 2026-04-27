@@ -23,6 +23,8 @@ export function initPostFX() {
       chase:    { value: 0 },
       resolution:{ value: new THREE.Vector2(w, h) },
       vignetteStrength: { value: 1.0 },
+      heartbeat: { value: 0.0 },
+      shake:     { value: new THREE.Vector2(0, 0) },
     },
     vertexShader: `
       varying vec2 vUv;
@@ -37,6 +39,8 @@ export function initPostFX() {
       uniform float chase;
       uniform vec2  resolution;
       uniform float vignetteStrength;
+      uniform float heartbeat;
+      uniform vec2  shake;
       varying vec2  vUv;
 
       float rand(vec2 co) {
@@ -44,18 +48,19 @@ export function initPostFX() {
       }
 
       void main() {
-        vec2 uv = vUv;
-        // chromatic aberration — shift channels proportional to distance from center
+        vec2 uv = vUv + shake;
         vec2 center = vec2(0.5, 0.5);
         vec2 dir = uv - center;
         float dist = length(dir);
+
+        // chromatic aberration
         float caAmount = 0.0025 + chase * 0.012;
         vec3 col;
         col.r = texture2D(tDiffuse, uv - dir * caAmount).r;
         col.g = texture2D(tDiffuse, uv).g;
         col.b = texture2D(tDiffuse, uv + dir * caAmount).b;
 
-        // cheap bloom: sample a blurred pass using neighbors then threshold
+        // cheap bloom
         vec3 blurSum = vec3(0.0);
         float texelX = 1.0 / resolution.x;
         float texelY = 1.0 / resolution.y;
@@ -68,7 +73,7 @@ export function initPostFX() {
         vec3 bright = max(blurSum - vec3(0.45), vec3(0.0));
         col += bright * (1.2 + chase * 0.8);
 
-        // scanlines — sharper during chase
+        // scanlines
         float scan = sin(uv.y * resolution.y * 1.5) * 0.06 * (0.4 + chase * 1.2);
         col -= scan;
 
@@ -80,9 +85,13 @@ export function initPostFX() {
         col.r += chase * 0.12 * (0.5 + 0.5 * sin(time * 8.0));
         col *= 1.0 - chase * 0.08;
 
-        // vignette
+        // vignette — pulses with heartbeat
+        float vigPulse = vignetteStrength + heartbeat * 0.5;
         float vig = smoothstep(0.85, 0.2, dist);
-        col *= mix(1.0, vig, 0.65 * vignetteStrength);
+        col *= mix(1.0, vig, 0.65 * vigPulse);
+
+        // heartbeat red flash at edges
+        col.r += heartbeat * (1.0 - vig) * 0.35;
 
         gl_FragColor = vec4(col, 1.0);
       }

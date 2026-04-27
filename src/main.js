@@ -389,6 +389,17 @@ function updateKeyAndDoor(dt) {
 //  state.game LOOP
 // ═══════════════════════════════════════════════════════════════════
 let last = 0, raf = 0;
+let shakeX = 0, shakeY = 0;
+let hbPulse = 0;
+let wasChasing = false;
+let prevHeartTimer = 0;
+
+function triggerShake(amount) {
+  shakeX = (Math.random() - 0.5) * amount;
+  shakeY = (Math.random() - 0.5) * amount;
+  shakeDecay = amount;
+}
+
 function loop(now) {
   raf = requestAnimationFrame(loop);
   const dt = Math.min((now - last)/1000, 0.05);
@@ -409,12 +420,35 @@ function loop(now) {
     const s = Math.floor((Date.now() - state.levelStartTime)/1000);
     document.getElementById('timerHud').textContent = `⏱ ${fmtTime(s)}   🗒 ${P.notesFoundThisLevel}/${P.notesTotalThisLevel}${P.hasKey?'   🔑':''}`;
   }
+  // chase-start flash + shake
+  const isChasing = MONSTER.state === 'chase' && MONSTER.spawned;
+  if (isChasing && !wasChasing) triggerShake(0.018);
+  wasChasing = isChasing;
+
+  const monDist = MONSTER.spawned ? Math.hypot(P.x - MONSTER.x, P.z - MONSTER.z) : 99;
+
+  // screen shake during chase (more intense when close)
+  if (isChasing && monDist < 10) {
+    const shakeAmt = Math.max(0, (10 - monDist) / 10) * 0.006;
+    shakeX += (Math.random() - 0.5) * shakeAmt;
+    shakeY += (Math.random() - 0.5) * shakeAmt;
+  }
+  shakeX *= 0.82;
+  shakeY *= 0.82;
+
+  // heartbeat vignette pulse — fires when heartTimer resets (heartbeat just played)
+  if (state.heartTimer < prevHeartTimer && prevHeartTimer > 0) hbPulse = 1.0;
+  prevHeartTimer = state.heartTimer;
+  hbPulse *= 0.88;
+
   // render
   if (state.fxEnabled && fxMat) {
     fxMat.uniforms.time.value = now * 0.001;
-    const chaseU = MONSTER.state === 'chase' ? 1.0 : (MONSTER.state === 'investigate' ? 0.25 : 0);
+    const chaseU = isChasing ? 1.0 : (MONSTER.state === 'investigate' ? 0.25 : 0);
     fxMat.uniforms.chase.value += (chaseU - fxMat.uniforms.chase.value) * 0.06;
     fxMat.uniforms.vignetteStrength.value = P.hiding ? 1.6 : 1.0;
+    fxMat.uniforms.heartbeat.value = hbPulse;
+    fxMat.uniforms.shake.value.set(shakeX, shakeY);
     renderer.setRenderTarget(fxRT);
     renderer.render(scene, camera);
     renderer.setRenderTarget(null);

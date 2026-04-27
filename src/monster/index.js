@@ -406,8 +406,14 @@ export function updateMonsterAI(dt) {
       MONSTER.lastSeenPlayer = performance.now();
     }
   } else if (MONSTER.state === 'chase') {
-    // lost sight — stay in chase briefly, then degrade to investigate at last known pos
-    if (performance.now() - MONSTER.lastSeenPlayer > 3500) {
+    // lost sight — path to last known pos immediately, give up after 5s
+    const timeLost = performance.now() - MONSTER.lastSeenPlayer;
+    if (timeLost > 800 && timeLost < 900) {
+      // just lost sight — repath to last known player position
+      const pt = worldToTile(P.x, P.z);
+      repathTo(pt.gx, pt.gz);
+    }
+    if (timeLost > 5000) {
       MONSTER.state = 'investigate';
       const pt = worldToTile(P.x, P.z);
       MONSTER.investigateTarget = { gx: pt.gx, gz: pt.gz };
@@ -430,7 +436,11 @@ export function updateMonsterAI(dt) {
   // ── Movement ──
   const lv = LEVELS[state.currentLevel];
   let speed = lv.spd;
-  if (MONSTER.state === 'chase') speed *= 1.1;
+  if (MONSTER.state === 'chase') {
+    // accelerate as it closes in — terrifying sprint at close range
+    const closeFactor = Math.max(1.0, 1.6 - dist * 0.06);
+    speed *= closeFactor;
+  }
   else if (MONSTER.state === 'investigate') speed *= 0.7;
   else if (MONSTER.state === 'patrol') speed *= 0.55;
   else if (MONSTER.state === 'idle') speed = 0;
