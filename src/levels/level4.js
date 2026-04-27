@@ -21,4 +21,5 @@ export const grid = [
 export const config = {
   n: 4, name: "CHUQUR", spd: 3.6, lm: 0.44, fm: 1.80,
   flickerMul: 2.2, fogColor: 0x080303, ambientColor: 0x804030,
+  propTheme: 'chuqur',
 };

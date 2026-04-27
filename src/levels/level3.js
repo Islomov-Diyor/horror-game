@@ -22,4 +22,5 @@ export const grid = [
 export const config = {
   n: 3, name: "MAHBAS", spd: 3.2, lm: 0.62, fm: 1.45,
   flickerMul: 1.7, fogColor: 0x100502, ambientColor: 0xa07050,
+  propTheme: 'mahbas',
 };

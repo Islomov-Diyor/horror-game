@@ -17,4 +17,5 @@ export const grid = [
 export const config = {
   n: 2, name: "TUNNEL", spd: 2.8, lm: 0.80, fm: 1.15,
   flickerMul: 1.3, fogColor: 0x0d0a06, ambientColor: 0xd4b680,
+  propTheme: 'tunnel',
 };
