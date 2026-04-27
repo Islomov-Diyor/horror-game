@@ -6,6 +6,7 @@ import { setGrid, MAP_W, MAP_H, getCurGW, getCurGH, getCurGrid, isWall, tileAt, 
 import { scene, camera, cvEl, renderer, audioListener, hemi, ambient, playerLight, flashlight, flashTarget, levelGroup } from './core/scene.js';
 import { LEVEL_TEX, wallTex, floorTex, ceilingTex, paperTex, signTex } from './world/textures.js';
 import { ceilingLights, lightPanels, registerClearCallback, disposeNode, clearLevel, buildLevelGeometry, buildDust, updateDust } from './world/builder.js';
+import { scatterProps } from './world/props.js';
 import { applyLevelLighting, updateFlicker } from './world/lighting.js';
 import { keyGroup, doorGroup, hidingSpots, batteryPickups, notePickups, monsterWaypoints, NOTE_LORE, buildKey, buildDoor, buildHidingSpot, buildBattery, buildNote } from './world/collectibles.js';
 
@@ -199,6 +200,7 @@ function resetState() {
   setGrid(LEVEL_GRIDS[state.currentLevel]);
 
   buildLevelGeometry();
+  scatterProps(levelGroup, LEVELS[state.currentLevel]);
   buildDust();
 
   // spawn location
