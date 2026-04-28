@@ -30,6 +30,8 @@ const P = {
   notesTotalThisLevel: 0,
   notesFoundThisLevel: 0,
   sprintHeld: false,
+  bobPhase: 0,
+  keys: {},
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -582,7 +584,7 @@ function updateNoteCount() {
 //  state.game LOOP
 // ═══════════════════════════════════════════════════════════════════
 let last = 0, raf = 0;
-let shakeX = 0, shakeY = 0;
+let shakeX = 0, shakeY = 0, shakeDecay = 0;
 let hbPulse = 0;
 let wasChasing = false;
 let prevHeartTimer = 0;
