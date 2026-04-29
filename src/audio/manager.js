@@ -167,6 +167,8 @@ export function updateMonsterAudio(dist, camX, camZ, camYaw, monX, monZ, monSpaw
   }
 }
 
+export function isAudioReady() { return AC !== null; }
+
 let _onHeartbeat = null;
 export function setHeartbeatCallback(fn) { _onHeartbeat = fn; }
 

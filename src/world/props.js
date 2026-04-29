@@ -23,21 +23,27 @@ function mat(color, roughness = 0.9) {
   return new THREE.MeshStandardMaterial({ color, roughness, metalness: 0.05 });
 }
 
+function meshAt(geo, material, x, y, z) {
+  const m = new THREE.Mesh(geo, material);
+  m.position.set(x, y, z);
+  return m;
+}
+
 // ── mahalla (level 1) ──────────────────────────────────────────────
 function buildChoynak() {
   const g = new THREE.Group();
-  g.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.10, 0.18, 8), mat(0x8b6914)), { position: new THREE.Vector3(0, 0.09, 0) }));
+  g.add(meshAt(new THREE.CylinderGeometry(0.12, 0.10, 0.18, 8), mat(0x8b6914), 0, 0.09, 0));
   const spout = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.035, 0.12, 6), mat(0x8b6914));
   spout.rotation.z = Math.PI / 3;
   spout.position.set(0.11, 0.11, 0);
   g.add(spout);
-  g.add(Object.assign(new THREE.Mesh(new THREE.SphereGeometry(0.065, 8, 6), mat(0x7a5c10)), { position: new THREE.Vector3(0, 0.20, 0) }));
+  g.add(meshAt(new THREE.SphereGeometry(0.065, 8, 6), mat(0x7a5c10), 0, 0.20, 0));
   return g;
 }
 
 function buildShelf() {
   const g = new THREE.Group();
-  g.add(Object.assign(new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.9, 0.04), mat(0x5c3d1e)), { position: new THREE.Vector3(0, 0.45, 0) }));
+  g.add(meshAt(new THREE.BoxGeometry(0.8, 0.9, 0.04), mat(0x5c3d1e), 0, 0.45, 0));
   for (let i = 0; i < 3; i++) {
     const shelf = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.04, 0.18), mat(0x6b4a25));
     shelf.position.set(0, 0.15 + i * 0.3, 0.07);
@@ -48,8 +54,8 @@ function buildShelf() {
 
 function buildChair() {
   const g = new THREE.Group();
-  g.add(Object.assign(new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.05, 0.38), mat(0x4a3520)), { position: new THREE.Vector3(0, 0.42, 0) }));
-  g.add(Object.assign(new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.4, 0.05), mat(0x4a3520)), { position: new THREE.Vector3(0, 0.64, -0.165) }));
+  g.add(meshAt(new THREE.BoxGeometry(0.38, 0.05, 0.38), mat(0x4a3520), 0, 0.42, 0));
+  g.add(meshAt(new THREE.BoxGeometry(0.38, 0.4, 0.05), mat(0x4a3520), 0, 0.64, -0.165));
   [[-0.15, -0.15], [0.15, -0.15], [-0.15, 0.15], [0.15, 0.15]].forEach(([lx, lz]) => {
     const leg = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.42, 0.04), mat(0x3a2810));
     leg.position.set(lx, 0.21, lz);
@@ -62,14 +68,14 @@ function buildFabricStrip() {
   const g = new THREE.Group();
   const colors = [0x8b1a1a, 0x1a4a8b, 0x8b7a1a];
   const c = colors[Math.floor(Math.random() * colors.length)];
-  g.add(Object.assign(new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.8, 0.01), mat(c, 1.0)), { position: new THREE.Vector3(0, CH - 0.4, 0) }));
+  g.add(meshAt(new THREE.BoxGeometry(0.06, 0.8, 0.01), mat(c, 1.0), 0, CH - 0.4, 0));
   return g;
 }
 
 function buildOilLamp() {
   const g = new THREE.Group();
-  g.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.06, 8), mat(0x7a6020)), { position: new THREE.Vector3(0, 0.03, 0) }));
-  g.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.04, 0.08, 8), mat(0x8a7030)), { position: new THREE.Vector3(0, 0.10, 0) }));
+  g.add(meshAt(new THREE.CylinderGeometry(0.07, 0.09, 0.06, 8), mat(0x7a6020), 0, 0.03, 0));
+  g.add(meshAt(new THREE.CylinderGeometry(0.06, 0.04, 0.08, 8), mat(0x8a7030), 0, 0.10, 0));
   const flame = new THREE.Mesh(new THREE.SphereGeometry(0.025, 6, 4),
     new THREE.MeshStandardMaterial({ color: 0xff9900, emissive: 0xff6600, emissiveIntensity: 1.2 }));
   flame.position.set(0, 0.18, 0);
@@ -256,8 +262,8 @@ function buildPrayerBeads() {
 
 function buildOffering() {
   const g = new THREE.Group();
-  g.add(Object.assign(new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.12, 0.02, 10), mat(0x5a4010, 0.9)), { position: new THREE.Vector3(0, 0.01, 0) }));
-  g.add(Object.assign(new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 6), mat(0x5a1a00, 0.8)), { position: new THREE.Vector3(0, 0.075, 0) }));
+  g.add(meshAt(new THREE.CylinderGeometry(0.14, 0.12, 0.02, 10), mat(0x5a4010, 0.9), 0, 0.01, 0));
+  g.add(meshAt(new THREE.SphereGeometry(0.055, 8, 6), mat(0x5a1a00, 0.8), 0, 0.075, 0));
   return g;
 }
 
