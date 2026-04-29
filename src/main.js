@@ -15,24 +15,7 @@ import { JS, mobSprintPressed, pollGamepad, setupInput } from './input/index.js'
 
 import { MONSTER, buildMonster, animateMonster, monsterSpawnBehindPlayer, updateMonsterAI, runJumpscare, resizeJs, setTriggerGameOver } from './monster/index.js';
 import { fxRT, fxScene, fxCam, fxMat, initPostFX, resizePostFX } from './core/postfx.js';
-
-// ─── player state object ───────────────────────────────────────────
-const P = {
-  x: 0, y: 1.7, z: 0,
-  yaw: 0, pitch: 0,
-  hasKey: false,
-  stamina: 1.0,
-  battery: 1.0,
-  flashOn: false,
-  hiding: false, hideSpot: null,
-  noteReading: false, noteCurrent: null,
-  noiseLevel: 0,
-  notesTotalThisLevel: 0,
-  notesFoundThisLevel: 0,
-  sprintHeld: false,
-  bobPhase: 0,
-  keys: {},
-};
+import { P } from './player/index.js';
 
 // ═══════════════════════════════════════════════════════════════════
 //  state.game OVER / LEVEL FLOW
