@@ -681,6 +681,7 @@ document.getElementById('startScreen').addEventListener('click', e => {
 });
 
 initPostFX();
+buildMonster();
 
 window.addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
