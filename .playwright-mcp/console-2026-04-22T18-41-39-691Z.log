@@ -1,4 +1,0 @@
-[    1189ms] TypeError: Cannot assign to read only property 'position' of object '#<Wn>'
-    at Object.assign (<anonymous>)
-    at buildMonsterMesh (http://localhost:8877/:431:16)
-    at http://localhost:8877/:459:21

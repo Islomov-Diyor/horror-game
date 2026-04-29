@@ -1,0 +1,47 @@
+# dependencies
+node_modules/
+package-lock.json.bak
+
+# build output
+dist/
+build/
+*.local
+
+# editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude Code / agent tooling
+.claude/
+.playwright-mcp/
+.aider*
+
+# project docs / plans (kept local, not public)
+docs/
+CLAUDE.md
+GEMINI.md
+AGENTS.md
+
+# screenshots / debug captures
+*.png.tmp
+azob-*.png
+monster-test-*.png
+*-screenshot.png
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# env / secrets
+.env
+.env.*
+*.pem
+*.key
