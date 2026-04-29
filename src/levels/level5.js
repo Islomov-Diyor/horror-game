@@ -19,7 +19,8 @@ export const grid = [
 ];
 
 export const config = {
-  n: 5, name: "JAHANNAM", spd: 4.0, lm: 0.32, fm: 2.15,
+  n: 5, name: "JAHANNAM", spd: 5.0, lm: 0.32, fm: 2.15,
   flickerMul: 3.2, fogColor: 0x0a0202, ambientColor: 0xaa3020,
   propTheme: 'jahannam',
+  pred: 1.5, giveup: 999999,
 };

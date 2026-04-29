@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { CH } from '../core/config.js';
 import { state } from '../core/state.js';
 import { LEVELS } from '../levels/index.js';
-import { levelGroup } from '../core/scene.js';
+import { scene, levelGroup, camera } from '../core/scene.js';
 import { allFloorTiles, worldToTile, tileCenter, tileAt, inMap, aStar } from '../world/map.js';
 import { monsterWaypoints } from '../world/collectibles.js';
 import { chaseSting, monsterFootstep } from '../audio/manager.js';
@@ -13,7 +13,7 @@ export function setTriggerGameOver(fn) { _triggerGameOver = fn; }
 function triggerGameOver() { _triggerGameOver(); }
 
 // ═══════════════════════════════════════════════════════════════════
-//  FULL-BODY 3D MONSTER RIG
+//  MOMO MONSTER RIG — pale, oversized head, long arms, fixed grin
 // ═══════════════════════════════════════════════════════════════════
 export const MONSTER = {
   root: null,
@@ -22,13 +22,21 @@ export const MONSTER = {
   facing: 0,
   phase: 0,
   stateStartTime: 0,
-  state: 'idle',       // 'idle' | 'patrol' | 'investigate' | 'chase' | 'stunned'
+  state: 'idle',       // 'idle' | 'patrol' | 'listening' | 'investigate' | 'chase' | 'stunned'
   targetPath: null,
   pathIndex: 0,
   investigateTarget: null,
   patrolIndex: 0,
   lastSeenPlayer: 0,
-  breathingSound: null,
+  lostSightAt: 0,
+  listenStart: 0,
+  freezeUntil: 0,
+  nextFreezeAt: 0,
+  twitchUntil: 0,
+  nextTwitchAt: 0,
+  lungeUntil: 0,
+  lungeSpeed: 0,
+  stunCount: 0,
   footstepTimer: 0,
   spawned: false,
 };
@@ -36,191 +44,237 @@ export const MONSTER = {
 export function buildMonster() {
   const root = new THREE.Group();
 
-  // Materials
+  // ── Materials ──
   const skinMat = new THREE.MeshStandardMaterial({
-    color: 0xa89e91, roughness: 0.88, metalness: 0.04, emissive: 0x120806, emissiveIntensity: 0.15
+    color: 0xd4cfc8, roughness: 0.85, metalness: 0.02, emissive: 0x0a0808, emissiveIntensity: 0.08
   });
   const skinDarkMat = new THREE.MeshStandardMaterial({
-    color: 0x6a5e50, roughness: 0.92, metalness: 0.04
+    color: 0x8a857c, roughness: 0.92, metalness: 0.03
   });
   const gownMat = new THREE.MeshStandardMaterial({
-    color: 0xa89a76, roughness: 0.95, metalness: 0.0, emissive: 0x1a1108, emissiveIntensity: 0.08
+    color: 0x6a5e54, roughness: 0.96, metalness: 0.0
   });
   const gownDirtMat = new THREE.MeshStandardMaterial({
-    color: 0x6a5030, roughness: 0.95
+    color: 0x3a3028, roughness: 0.95
   });
   const hairMat = new THREE.MeshStandardMaterial({
-    color: 0x0a0610, roughness: 1.0, metalness: 0.0
+    color: 0x05030a, roughness: 1.0, metalness: 0.0
   });
-  const bloodMat = new THREE.MeshStandardMaterial({
-    color: 0x4a0505, roughness: 0.35, metalness: 0.3, emissive: 0x200000, emissiveIntensity: 0.2
+  const eyeWhiteMat = new THREE.MeshStandardMaterial({
+    color: 0xe8e6dd, roughness: 0.45, metalness: 0.05, emissive: 0x222020, emissiveIntensity: 0.4
   });
-  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff3311 });
+  const eyePupilMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+  const mouthMat = new THREE.MeshStandardMaterial({
+    color: 0x6e3a3a, roughness: 0.75, emissive: 0x180808, emissiveIntensity: 0.2
+  });
 
-  // ── BODY (root) ──
+  // ── BODY container ──
   const body = new THREE.Group();
-  body.position.y = 0.0; // feet on floor
+  body.position.y = 0.0;
   root.add(body);
 
-  // Torso — tapered cylinder (shoulders wider)
-  const torsoGeo = new THREE.CylinderGeometry(0.22, 0.32, 0.78, 10);
-  const torso = new THREE.Mesh(torsoGeo, gownMat);
+  // Torso — narrower than before
+  const torso = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.18, 0.26, 0.78, 10),
+    gownMat
+  );
   torso.position.y = 1.25;
   body.add(torso);
-  // Torso dirt overlay (smaller inner box)
   const torsoDirt = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.23, 0.33, 0.4, 10),
+    new THREE.CylinderGeometry(0.19, 0.27, 0.4, 10),
     gownDirtMat
   );
   torsoDirt.position.y = 1.05;
   body.add(torsoDirt);
-  // Blood drip on chest
-  const chestBlood = new THREE.Mesh(
-    new THREE.BoxGeometry(0.28, 0.35, 0.02),
-    bloodMat
-  );
-  chestBlood.position.set(0, 1.2, 0.32);
-  body.add(chestBlood);
 
-  // ── SKIRT (ragged gown bottom) ──
-  const skirtGeo = new THREE.ConeGeometry(0.48, 0.9, 12, 1, true);
-  const skirt = new THREE.Mesh(skirtGeo, gownMat);
+  // ── SKIRT ──
+  const skirt = new THREE.Mesh(
+    new THREE.ConeGeometry(0.46, 0.9, 12, 1, true),
+    gownMat
+  );
   skirt.position.y = 0.55;
   skirt.rotation.x = Math.PI;
   body.add(skirt);
 
-  // ── NECK ──
+  // ── NECK — taller, thinner ──
   const neck = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.08, 0.1, 0.18, 8),
+    new THREE.CylinderGeometry(0.06, 0.07, 0.28, 8),
     skinMat
   );
-  neck.position.y = 1.72;
+  neck.position.y = 1.78;
   body.add(neck);
-  // blood slash on neck
-  const neckBlood = new THREE.Mesh(
-    new THREE.BoxGeometry(0.18, 0.03, 0.14),
-    bloodMat
-  );
-  neckBlood.position.y = 1.67;
-  body.add(neckBlood);
 
-  // ── HEAD (pivot group so we can tilt/nod) ──
+  // ── HEAD pivot (oversized, wider) ──
   const headPivot = new THREE.Group();
-  headPivot.position.y = 1.82;
+  headPivot.position.y = 1.96;
   body.add(headPivot);
+
   const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.2, 16, 14),
+    new THREE.SphereGeometry(0.22, 18, 16),
     skinMat
   );
-  head.scale.set(0.85, 1.05, 0.9);
+  head.scale.set(1.35, 1.05, 1.0); // 35% wider — Momo proportions
   headPivot.add(head);
-  // jaw (lower mouth mass)
-  const jaw = new THREE.Mesh(
-    new THREE.SphereGeometry(0.13, 12, 8),
-    bloodMat
+
+  // Faint shadow under cheekbones
+  const cheekShadow = new THREE.Mesh(
+    new THREE.SphereGeometry(0.08, 8, 6),
+    new THREE.MeshBasicMaterial({ color: 0x554840, transparent: true, opacity: 0.45 })
   );
-  jaw.scale.set(0.9, 0.5, 0.7);
-  jaw.position.set(0, -0.08, 0.06);
-  headPivot.add(jaw);
-  // eyes (two small glowing spheres - WILL cast bloom via emissive + point lights)
-  const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), eyeMat);
-  const eyeR = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), eyeMat);
-  eyeL.position.set(-0.065, 0.02, 0.17);
-  eyeR.position.set(0.065, 0.02, 0.17);
-  headPivot.add(eyeL);
-  headPivot.add(eyeR);
-  // eye point-lights for menacing glow
-  const eyeGlowL = new THREE.PointLight(0xff2200, 0.4, 2.2);
-  const eyeGlowR = new THREE.PointLight(0xff2200, 0.4, 2.2);
-  eyeGlowL.position.copy(eyeL.position);
-  eyeGlowR.position.copy(eyeR.position);
+  cheekShadow.position.set(0, -0.05, 0.18);
+  cheekShadow.scale.set(2.2, 0.6, 0.4);
+  headPivot.add(cheekShadow);
+
+  // ── EYES — large white sclera with dark pupil ──
+  function buildEye(side) {
+    const sclera = new THREE.Mesh(
+      new THREE.SphereGeometry(0.075, 14, 12),
+      eyeWhiteMat
+    );
+    sclera.position.set(side * 0.115, 0.025, 0.21);
+    sclera.scale.set(1.0, 1.05, 0.9);
+    headPivot.add(sclera);
+    const pupil = new THREE.Mesh(
+      new THREE.SphereGeometry(0.034, 10, 8),
+      eyePupilMat
+    );
+    pupil.position.set(side * 0.115, 0.02, 0.275);
+    headPivot.add(pupil);
+    // dark eye socket ring
+    const socketRing = new THREE.Mesh(
+      new THREE.TorusGeometry(0.085, 0.018, 6, 16),
+      new THREE.MeshBasicMaterial({ color: 0x1a0808, transparent: true, opacity: 0.55 })
+    );
+    socketRing.position.set(side * 0.115, 0.02, 0.21);
+    socketRing.rotation.y = side * 0.15;
+    headPivot.add(socketRing);
+    return { sclera, pupil };
+  }
+  const eyeL = buildEye(-1);
+  const eyeR = buildEye(1);
+
+  // small dim red point lights for far-away menace
+  const eyeGlowL = new THREE.PointLight(0xff5544, 0.18, 1.4);
+  const eyeGlowR = new THREE.PointLight(0xff5544, 0.18, 1.4);
+  eyeGlowL.position.set(-0.115, 0.02, 0.27);
+  eyeGlowR.position.set( 0.115, 0.02, 0.27);
   headPivot.add(eyeGlowL);
   headPivot.add(eyeGlowR);
 
-  // ── HAIR (ragged strands as curved planes) ──
+  // ── MOUTH — fixed wide grin (curved torus arc) ──
+  const mouthShape = new THREE.Shape();
+  // crescent grin path
+  mouthShape.moveTo(-0.16, 0);
+  mouthShape.bezierCurveTo(-0.12, -0.06, 0.12, -0.06, 0.16, 0);
+  mouthShape.bezierCurveTo(0.10, -0.02, -0.10, -0.02, -0.16, 0);
+  const mouth = new THREE.Mesh(
+    new THREE.ShapeGeometry(mouthShape),
+    mouthMat
+  );
+  mouth.position.set(0, -0.13, 0.225);
+  mouth.rotation.x = -0.15;
+  headPivot.add(mouth);
+  // grin upper lip line
+  const lipLine = new THREE.Mesh(
+    new THREE.TorusGeometry(0.16, 0.005, 4, 18, Math.PI),
+    new THREE.MeshBasicMaterial({ color: 0x2a0a0a })
+  );
+  lipLine.position.set(0, -0.13, 0.226);
+  lipLine.rotation.z = Math.PI; // grin curves up at the corners
+  headPivot.add(lipLine);
+
+  // tiny nostril dots
+  const nostrilMat = new THREE.MeshBasicMaterial({ color: 0x1a0808 });
+  const nostrilL = new THREE.Mesh(new THREE.SphereGeometry(0.012, 6, 5), nostrilMat);
+  const nostrilR = new THREE.Mesh(new THREE.SphereGeometry(0.012, 6, 5), nostrilMat);
+  nostrilL.position.set(-0.03, -0.04, 0.27);
+  nostrilR.position.set( 0.03, -0.04, 0.27);
+  headPivot.add(nostrilL);
+  headPivot.add(nostrilR);
+
+  // ── HAIR — dense long strands, drape forward ──
   const hairBulk = new THREE.Mesh(
-    new THREE.SphereGeometry(0.22, 12, 10),
+    new THREE.SphereGeometry(0.27, 14, 12),
     hairMat
   );
-  hairBulk.position.set(0, 0.07, -0.02);
-  hairBulk.scale.set(1.05, 0.85, 1.05);
+  hairBulk.position.set(0, 0.06, -0.04);
+  hairBulk.scale.set(1.1, 0.9, 1.05);
   headPivot.add(hairBulk);
-  // long strands
-  for (let i = 0; i < 6; i++) {
+  // 12 long strands
+  for (let i = 0; i < 12; i++) {
     const strand = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.08, 0.55),
+      new THREE.PlaneGeometry(0.07, 0.78),
       hairMat
     );
-    const a = (i / 6) * Math.PI * 2;
-    strand.position.set(Math.sin(a) * 0.15, -0.2, Math.cos(a) * 0.15);
+    const a = (i / 12) * Math.PI * 2;
+    const r = 0.18 + Math.random() * 0.04;
+    strand.position.set(Math.sin(a) * r, -0.32, Math.cos(a) * r);
     strand.rotation.y = a;
-    strand.rotation.x = 0.2;
+    strand.rotation.x = 0.15 + Math.random() * 0.15;
     headPivot.add(strand);
   }
+  // forehead bangs (3 short strands)
+  for (let i = 0; i < 4; i++) {
+    const bang = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.09, 0.32),
+      hairMat
+    );
+    bang.position.set((i - 1.5) * 0.07, 0.1, 0.22);
+    bang.rotation.x = -0.1;
+    headPivot.add(bang);
+  }
 
-  // ── ARMS (shoulder → upper → elbow → forearm → hand) ──
+  // ── ARMS — 30% longer ──
   function buildArm(side) {
-    const shoulderX = side * 0.3;
-    const shoulderY = 1.55;
     const shoulder = new THREE.Group();
-    shoulder.position.set(shoulderX, shoulderY, 0);
+    shoulder.position.set(side * 0.26, 1.55, 0);
     body.add(shoulder);
     const upper = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.06, 0.05, 0.4, 8),
+      new THREE.CylinderGeometry(0.055, 0.045, 0.52, 8),
       skinMat
     );
-    upper.position.y = -0.2; // hang below shoulder
+    upper.position.y = -0.26;
     shoulder.add(upper);
     const elbow = new THREE.Group();
-    elbow.position.y = -0.42;
+    elbow.position.y = -0.55;
     shoulder.add(elbow);
     const forearm = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.05, 0.035, 0.38, 8),
+      new THREE.CylinderGeometry(0.045, 0.03, 0.5, 8),
       skinMat
     );
-    forearm.position.y = -0.2;
+    forearm.position.y = -0.26;
     elbow.add(forearm);
-    // claw hand
     const hand = new THREE.Mesh(
-      new THREE.SphereGeometry(0.06, 8, 6),
+      new THREE.SphereGeometry(0.055, 8, 6),
       skinDarkMat
     );
-    hand.position.y = -0.42;
-    hand.scale.set(0.9, 1.1, 0.8);
+    hand.position.y = -0.55;
+    hand.scale.set(0.9, 1.2, 0.8);
     elbow.add(hand);
-    // five claw fingers — thin cones
+    // 5 thin claw fingers
     for (let i = 0; i < 5; i++) {
       const claw = new THREE.Mesh(
-        new THREE.ConeGeometry(0.012, 0.11, 5),
+        new THREE.ConeGeometry(0.011, 0.12, 5),
         skinDarkMat
       );
       const a = (i / 5 - 0.5) * 1.2;
-      claw.position.set(Math.sin(a) * 0.06, -0.55, Math.cos(a) * 0.03);
-      claw.rotation.x = Math.PI; // point down
+      claw.position.set(Math.sin(a) * 0.055, -0.68, Math.cos(a) * 0.03);
+      claw.rotation.x = Math.PI;
       claw.rotation.z = a * 0.3;
       elbow.add(claw);
     }
-    // blood on hand
-    const handBlood = new THREE.Mesh(
-      new THREE.SphereGeometry(0.055, 6, 5),
-      bloodMat
-    );
-    handBlood.position.y = -0.48;
-    handBlood.scale.set(1.1, 0.4, 1.0);
-    elbow.add(handBlood);
     return { shoulder, elbow };
   }
   const armL = buildArm(-1);
   const armR = buildArm(1);
 
-  // ── LEGS (hip → thigh → knee → shin → foot) ──
+  // ── LEGS ──
   function buildLeg(side) {
-    const hipX = side * 0.12;
     const hip = new THREE.Group();
-    hip.position.set(hipX, 0.88, 0);
+    hip.position.set(side * 0.1, 0.88, 0);
     body.add(hip);
     const thigh = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.08, 0.07, 0.42, 8),
+      new THREE.CylinderGeometry(0.075, 0.065, 0.42, 8),
       skinMat
     );
     thigh.position.y = -0.21;
@@ -229,13 +283,13 @@ export function buildMonster() {
     knee.position.y = -0.44;
     hip.add(knee);
     const shin = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.065, 0.055, 0.4, 8),
+      new THREE.CylinderGeometry(0.06, 0.05, 0.4, 8),
       skinMat
     );
     shin.position.y = -0.21;
     knee.add(shin);
     const foot = new THREE.Mesh(
-      new THREE.BoxGeometry(0.13, 0.06, 0.22),
+      new THREE.BoxGeometry(0.12, 0.05, 0.2),
       skinDarkMat
     );
     foot.position.set(0, -0.44, 0.04);
@@ -260,77 +314,134 @@ export function buildMonster() {
   };
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  ANIMATION — wrong-movement signatures
+// ═══════════════════════════════════════════════════════════════════
 export function animateMonster(dt) {
   if (!MONSTER.root || !MONSTER.root.visible) return;
   const p = MONSTER.parts;
-  // cycle speed scales with state
-  let cycleRate = 2.0;
-  let amp = 0.35;
-  let armAmp = 0.35;
-  let hunchZ = 0.0;
-  let bobMul = 0.035;
-  if (MONSTER.state === 'chase') { cycleRate = 6.0; amp = 0.75; armAmp = 0.9; hunchZ = 0.35; bobMul = 0.08; }
-  else if (MONSTER.state === 'investigate') { cycleRate = 3.5; amp = 0.5; armAmp = 0.5; hunchZ = 0.12; bobMul = 0.05; }
-  else if (MONSTER.state === 'patrol') { cycleRate = 2.5; amp = 0.4; armAmp = 0.35; }
-  else if (MONSTER.state === 'idle') { cycleRate = 0.6; amp = 0.05; armAmp = 0.08; }
-  else if (MONSTER.state === 'stunned') { cycleRate = 0.3; amp = 0.02; armAmp = 0.02; }
+  const now = performance.now();
+  const frozen = now < MONSTER.freezeUntil;
+  const stunned = MONSTER.state === 'stunned';
+
+  // motion params per state
+  let cycleRate = 2.0, amp = 0.35, armAmp = 0.35, hunchZ = 0.0, bobMul = 0.035;
+  if (MONSTER.state === 'chase')        { cycleRate = 7.0; amp = 0.85; armAmp = 1.0; hunchZ = 0.4; bobMul = 0.09; }
+  else if (MONSTER.state === 'investigate') { cycleRate = 3.5; amp = 0.5; armAmp = 0.5; hunchZ = 0.18; bobMul = 0.05; }
+  else if (MONSTER.state === 'patrol')   { cycleRate = 2.6; amp = 0.42; armAmp = 0.38; }
+  else if (MONSTER.state === 'listening'){ cycleRate = 0.0; amp = 0.0; armAmp = 0.0; hunchZ = 0.05; bobMul = 0.0; }
+  else if (MONSTER.state === 'idle')     { cycleRate = 0.5; amp = 0.04; armAmp = 0.06; }
+  else if (stunned)                      { cycleRate = 0.0; amp = 0.0; armAmp = 0.0; }
+  if (frozen)                            { cycleRate = 0.0; amp = 0.0; armAmp = 0.0; }
 
   MONSTER.phase += dt * cycleRate;
-  const wave = Math.sin(MONSTER.phase);
+  const wave  = Math.sin(MONSTER.phase);
   const wave2 = Math.sin(MONSTER.phase + Math.PI);
 
-  // legs — opposing swing
-  p.legL_hip.rotation.x = wave * amp;
+  // legs
+  p.legL_hip.rotation.x = wave  * amp;
   p.legR_hip.rotation.x = wave2 * amp;
-  // knee bend only on back swing (phase when leg is going backward)
-  p.legL_knee.rotation.x = Math.max(0, -wave * amp * 1.1);
+  p.legL_knee.rotation.x = Math.max(0, -wave  * amp * 1.1);
   p.legR_knee.rotation.x = Math.max(0, -wave2 * amp * 1.1);
 
-  // arms — opposing to legs
-  p.armL_shoulder.rotation.x = wave2 * armAmp;
-  p.armR_shoulder.rotation.x = wave * armAmp;
-  // elbow — chase has thrashing arms
-  if (MONSTER.state === 'chase') {
-    p.armL_elbow.rotation.x = -0.3 + Math.sin(MONSTER.phase*2) * 0.4;
-    p.armR_elbow.rotation.x = -0.3 + Math.sin(MONSTER.phase*2 + 1) * 0.4;
+  // arms — chase has thrashing
+  if (stunned) {
+    // stun pose — arms wide, head dropped
+    p.armL_shoulder.rotation.x = -0.2;
+    p.armR_shoulder.rotation.x = -0.2;
+    p.armL_shoulder.rotation.z = -1.2;
+    p.armR_shoulder.rotation.z =  1.2;
+    p.armL_elbow.rotation.x = -0.2;
+    p.armR_elbow.rotation.x = -0.2;
   } else {
-    p.armL_elbow.rotation.x = -0.3 + Math.max(0, wave2 * 0.4);
-    p.armR_elbow.rotation.x = -0.3 + Math.max(0, wave * 0.4);
+    p.armL_shoulder.rotation.z = 0;
+    p.armR_shoulder.rotation.z = 0;
+    p.armL_shoulder.rotation.x = wave2 * armAmp;
+    p.armR_shoulder.rotation.x = wave  * armAmp;
+    if (MONSTER.state === 'chase') {
+      p.armL_elbow.rotation.x = -0.4 + Math.sin(MONSTER.phase * 2) * 0.5;
+      p.armR_elbow.rotation.x = -0.4 + Math.sin(MONSTER.phase * 2 + 1) * 0.5;
+    } else {
+      p.armL_elbow.rotation.x = -0.3 + Math.max(0, wave2 * 0.4);
+      p.armR_elbow.rotation.x = -0.3 + Math.max(0, wave  * 0.4);
+    }
   }
 
-  // hunched forward when chasing
+  // hunched torso — leans into chase
   p.body.rotation.x = hunchZ + Math.abs(wave) * 0.04;
-
   // bob
   p.body.position.y = Math.abs(wave) * bobMul;
 
-  // head sway
-  p.headPivot.rotation.y = Math.sin(MONSTER.phase * 0.4) * 0.2;
-  // head tilt more when idle (searching)
-  if (MONSTER.state === 'idle' || MONSTER.state === 'patrol') {
-    p.headPivot.rotation.z = Math.sin(MONSTER.phase * 0.3) * 0.1;
-  } else {
+  // ── HEAD logic — over-rotation, freeze-stare, listening rotation ──
+  if (stunned) {
+    p.headPivot.rotation.x = 0.7;
+    p.headPivot.rotation.y = 0;
+    p.headPivot.rotation.z = 0.3;
+  } else if (frozen) {
+    // lock head toward player
+    const dx = P.x - MONSTER.x, dz = P.z - MONSTER.z;
+    const desired = Math.atan2(dx, dz) - MONSTER.facing;
+    // clamp to ±2.4 rad (over-rotation allowed)
+    let yaw = desired;
+    while (yaw >  Math.PI) yaw -= Math.PI * 2;
+    while (yaw < -Math.PI) yaw += Math.PI * 2;
+    yaw = Math.max(-2.4, Math.min(2.4, yaw));
+    p.headPivot.rotation.y += (yaw - p.headPivot.rotation.y) * Math.min(1, dt * 6);
+    p.headPivot.rotation.x = -0.05;
     p.headPivot.rotation.z = 0;
+  } else if (MONSTER.state === 'listening') {
+    // slow full rotation while listening
+    const t = (now - MONSTER.listenStart) / 1000;
+    p.headPivot.rotation.y = (t * (Math.PI * 2 / 4)) % (Math.PI * 2); // 4s full circle
+    if (p.headPivot.rotation.y > Math.PI) p.headPivot.rotation.y -= Math.PI * 2;
+    p.headPivot.rotation.x = 0;
+    p.headPivot.rotation.z = 0;
+  } else if (MONSTER.state === 'investigate') {
+    // head leads body — extra rotation toward target
+    const targetYaw = Math.sin(MONSTER.phase * 0.5) * 0.6;
+    p.headPivot.rotation.y += (targetYaw - p.headPivot.rotation.y) * Math.min(1, dt * 4);
+    p.headPivot.rotation.z = Math.sin(MONSTER.phase * 0.4) * 0.08;
+  } else if (MONSTER.state === 'idle' || MONSTER.state === 'patrol') {
+    p.headPivot.rotation.y = Math.sin(MONSTER.phase * 0.4) * 0.25;
+    p.headPivot.rotation.z = Math.sin(MONSTER.phase * 0.3) * 0.12;
+  } else {
+    // chase — head locked forward, slight bob
+    p.headPivot.rotation.y *= 0.92;
+    p.headPivot.rotation.z *= 0.92;
   }
 
   // skirt sway
   p.skirt.rotation.z = Math.sin(MONSTER.phase * 0.6) * 0.05;
 
-  // eye glow intensity modulation
-  const eyeBase = MONSTER.state === 'chase' ? 1.2 : MONSTER.state === 'investigate' ? 0.7 : 0.45;
-  const flicker = 0.9 + Math.random() * 0.2;
+  // eye glow — bright in chase, dim otherwise
+  const eyeBase = MONSTER.state === 'chase' ? 0.9 :
+                  MONSTER.state === 'investigate' ? 0.4 :
+                  MONSTER.state === 'listening' ? 0.3 : 0.18;
+  const flicker = 0.85 + Math.random() * 0.3;
   p.eyeGlowL.intensity = eyeBase * flicker;
   p.eyeGlowR.intensity = eyeBase * flicker;
 
+  // ── TWITCHY IDLE — random body jerks ──
+  let twitchYaw = 0;
+  if (MONSTER.state === 'idle' || MONSTER.state === 'patrol') {
+    if (now > MONSTER.nextTwitchAt && now > MONSTER.twitchUntil) {
+      MONSTER.twitchUntil = now + 100;
+      MONSTER.nextTwitchAt = now + 2000 + Math.random() * 2500;
+      MONSTER._twitchAmount = (Math.random() - 0.5) * 0.6;
+    }
+    if (now < MONSTER.twitchUntil) twitchYaw = MONSTER._twitchAmount || 0;
+  }
+
   // apply world transform
   MONSTER.root.position.set(MONSTER.x, 0, MONSTER.z);
-  MONSTER.root.rotation.y = MONSTER.facing;
+  MONSTER.root.rotation.y = MONSTER.facing + twitchYaw;
 }
 
 
 // ═══════════════════════════════════════════════════════════════════
+//  SPAWN
+// ═══════════════════════════════════════════════════════════════════
 export function monsterSpawnBehindPlayer() {
-  // find farthest accessible tile
   const candidates = allFloorTiles();
   const pt = worldToTile(P.x, P.z);
   let best = null, bestScore = -1;
@@ -345,6 +456,21 @@ export function monsterSpawnBehindPlayer() {
   MONSTER.spawned = true;
   MONSTER.state = 'chase';
   MONSTER.stateStartTime = performance.now();
+  MONSTER.lastSeenPlayer = performance.now();
+  MONSTER.lungeUntil = performance.now() + 300; // initial lunge burst
+  MONSTER.lungeSpeed = 0;
+  MONSTER.stunCount = 0;
+  // per-level scale
+  const lv = LEVELS[state.currentLevel];
+  const sY = 1.0 + state.currentLevel * 0.035;
+  const sXZ = state.currentLevel >= 4 ? 1.05 : 1.0;
+  MONSTER.root.scale.set(sXZ, sY, sXZ);
+  // reset rig pose offsets
+  MONSTER.parts.headPivot.rotation.set(0, 0, 0);
+  MONSTER.freezeUntil = 0;
+  MONSTER.nextFreezeAt = performance.now() + 4000;
+  MONSTER.twitchUntil = 0;
+  MONSTER.nextTwitchAt = performance.now() + 1500;
 }
 
 function monsterGotoRandomWaypoint() {
@@ -362,12 +488,11 @@ function repathTo(gx, gz) {
 
 function monsterCanSeePlayer() {
   if (!MONSTER.spawned) return false;
-  // simple LOS: step from monster to player; any wall blocks it
   const mx = MONSTER.x, mz = MONSTER.z;
   const px = P.x, pz = P.z;
   const dx = px - mx, dz = pz - mz;
   const dist = Math.hypot(dx, dz);
-  if (dist > 18) return false; // visibility cap
+  if (dist > 20) return false;
   const steps = Math.ceil(dist / 0.4);
   for (let i = 1; i < steps; i++) {
     const t = i / steps;
@@ -377,78 +502,122 @@ function monsterCanSeePlayer() {
   return true;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  AI UPDATE — listening, prediction, lunge, freeze-stare
+// ═══════════════════════════════════════════════════════════════════
 export function updateMonsterAI(dt) {
   if (!state.game || state.jsTriggered || !MONSTER.spawned) return;
+  const now = performance.now();
+  const lv = LEVELS[state.currentLevel];
   const mx = MONSTER.x, mz = MONSTER.z;
   const px = P.x, pz = P.z;
   const dist = Math.hypot(px - mx, pz - mz);
 
-  // ── Player making noise while sprinting triggers investigation ──
-  if (P.noiseLevel > 0 && MONSTER.state !== 'chase' && !P.hiding) {
-    const pt = worldToTile(P.x, P.z);
-    // monster only investigates if noise is close enough
+  // ── Noise → investigate (only when not chasing) ──
+  if (P.noiseLevel > 0 && MONSTER.state !== 'chase' && MONSTER.state !== 'stunned' && !P.hiding) {
     if (dist < 12 * (1 + P.noiseLevel)) {
+      const pt = worldToTile(P.x, P.z);
       MONSTER.investigateTarget = { gx: pt.gx, gz: pt.gz };
-      MONSTER.state = 'investigate';
-      MONSTER.stateStartTime = performance.now();
+      if (MONSTER.state !== 'investigate') {
+        MONSTER.state = 'investigate';
+        MONSTER.stateStartTime = now;
+      }
       repathTo(pt.gx, pt.gz);
     }
   }
-  // noise decays
+  // listening hears noise within 6u
+  if (MONSTER.state === 'listening' && P.noiseLevel > 0.08 && dist < 7) {
+    MONSTER.state = 'chase';
+    MONSTER.lungeUntil = now + 300;
+    MONSTER.lungeSpeed = 0;
+    MONSTER.lastSeenPlayer = now;
+    chaseSting();
+  }
   P.noiseLevel = Math.max(0, P.noiseLevel - dt * 0.6);
 
-  // ── Sight check: if monster sees player (and player not hiding) → chase ──
+  // ── Sight check ──
   if (!P.hiding && monsterCanSeePlayer()) {
     if (MONSTER.state !== 'chase') {
       MONSTER.state = 'chase';
-      MONSTER.stateStartTime = performance.now();
+      MONSTER.stateStartTime = now;
+      MONSTER.lungeUntil = now + 300;
+      MONSTER.lungeSpeed = 0;
       chaseSting();
-      MONSTER.lastSeenPlayer = performance.now();
     }
+    MONSTER.lastSeenPlayer = now;
+    MONSTER.lostSightAt = 0;
   } else if (MONSTER.state === 'chase') {
-    // lost sight — path to last known pos immediately, give up after 5s
-    const timeLost = performance.now() - MONSTER.lastSeenPlayer;
-    if (timeLost > 800 && timeLost < 900) {
-      // just lost sight — repath to last known player position
+    if (!MONSTER.lostSightAt) MONSTER.lostSightAt = now;
+    const timeLost = now - MONSTER.lostSightAt;
+    if (timeLost > 700 && timeLost < 850) {
       const pt = worldToTile(P.x, P.z);
       repathTo(pt.gx, pt.gz);
     }
-    if (timeLost > 5000) {
-      MONSTER.state = 'investigate';
+    if (timeLost > 1500 && MONSTER.state === 'chase') {
+      // transition to listening
+      MONSTER.state = 'listening';
+      MONSTER.listenStart = now;
+    }
+  }
+  // listening timeout
+  if (MONSTER.state === 'listening') {
+    if (now - MONSTER.listenStart > 5000) {
       const pt = worldToTile(P.x, P.z);
       MONSTER.investigateTarget = { gx: pt.gx, gz: pt.gz };
+      MONSTER.state = 'investigate';
+      MONSTER.stateStartTime = now;
       repathTo(pt.gx, pt.gz);
     }
   }
-  if (MONSTER.state === 'chase') MONSTER.lastSeenPlayer = performance.now();
+  // overall give-up: no sight for `giveup` ms drops to patrol
+  if ((MONSTER.state === 'investigate' || MONSTER.state === 'listening') &&
+      now - MONSTER.lastSeenPlayer > lv.giveup) {
+    MONSTER.state = 'patrol';
+    monsterGotoRandomWaypoint();
+  }
 
   // ── Collision with player ──
   if (!P.hiding && dist < 0.95 && MONSTER.state === 'chase') {
     triggerGameOver();
     return;
   }
-  // Hiding: if monster is standing next to locker, small chance to detect (based on noise)
-  if (P.hiding && MONSTER.state === 'chase' && dist < 1.5 && P.noiseLevel > 0.4) {
+  // hiding detection — softens after stuns
+  const lockerThresh = MONSTER.stunCount >= 2 ? 1.2 : 1.5;
+  if (P.hiding && MONSTER.state === 'chase' && dist < lockerThresh && P.noiseLevel > 0.4) {
     triggerGameOver();
     return;
   }
 
+  // ── Freeze-stare during patrol/idle ──
+  if ((MONSTER.state === 'patrol' || MONSTER.state === 'idle') && now > MONSTER.nextFreezeAt && now > MONSTER.freezeUntil) {
+    MONSTER.freezeUntil = now + 1000 + Math.random() * 2000;
+    MONSTER.nextFreezeAt = MONSTER.freezeUntil + 5000 + Math.random() * 4000;
+  }
+  const frozen = now < MONSTER.freezeUntil;
+
   // ── Movement ──
-  const lv = LEVELS[state.currentLevel];
   let speed = lv.spd;
   if (MONSTER.state === 'chase') {
-    // accelerate as it closes in — terrifying sprint at close range
     const closeFactor = Math.max(1.0, 1.6 - dist * 0.06);
     speed *= closeFactor;
+    // lunge burst — accel from 0 to full over 0.3s
+    if (now < MONSTER.lungeUntil) {
+      const t = 1 - (MONSTER.lungeUntil - now) / 300;
+      MONSTER.lungeSpeed = speed * t;
+      speed = MONSTER.lungeSpeed;
+    }
   }
   else if (MONSTER.state === 'investigate') speed *= 0.7;
-  else if (MONSTER.state === 'patrol') speed *= 0.55;
-  else if (MONSTER.state === 'idle') speed = 0;
-  else if (MONSTER.state === 'stunned') speed = 0;
+  else if (MONSTER.state === 'patrol')      speed *= 0.55;
+  else                                       speed = 0;
+  if (frozen) speed = 0;
 
-  if (MONSTER.state === 'chase') {
-    // direct chase with simple wall-slide
-    const dx = px - mx, dz = pz - mz;
+  if (MONSTER.state === 'chase' && speed > 0) {
+    // PREDICTION — chase where player is going
+    const lead = lv.pred || 0;
+    const tx = px + P.vx * lead;
+    const tz = pz + P.vz * lead;
+    const dx = tx - mx, dz = tz - mz;
     const len = Math.max(0.01, Math.hypot(dx, dz));
     const step = speed * dt;
     const nx = mx + (dx/len) * step;
@@ -458,12 +627,11 @@ export function updateMonsterAI(dt) {
     else if (inMap(nx, mz + 0.4, 0.4)) { MONSTER.z += 0.06; MONSTER.x = nx; }
     else if (inMap(nx, mz - 0.4, 0.4)) { MONSTER.z -= 0.06; MONSTER.x = nx; }
     if (inMap(MONSTER.x, nz, 0.4)) MONSTER.z = nz;
-    MONSTER.facing = Math.atan2(dx, dz);
-  } else if (MONSTER.state === 'patrol' || MONSTER.state === 'investigate') {
-    // follow path
+    // face direct player position (not predicted) so it looks right
+    MONSTER.facing = Math.atan2(px - mx, pz - mz);
+  } else if ((MONSTER.state === 'patrol' || MONSTER.state === 'investigate') && speed > 0) {
     if (!MONSTER.targetPath || MONSTER.pathIndex >= MONSTER.targetPath.length) {
       if (MONSTER.state === 'investigate') {
-        // reached investigation target — return to patrol
         MONSTER.state = 'patrol';
         monsterGotoRandomWaypoint();
       } else {
@@ -485,167 +653,171 @@ export function updateMonsterAI(dt) {
     }
   }
 
-  // footstep sounds on step intervals
+  // footstep cadence
   MONSTER.footstepTimer += dt;
-  const stepInterval = MONSTER.state === 'chase' ? 0.28 : MONSTER.state === 'investigate' ? 0.45 : 0.7;
-  if (MONSTER.state !== 'idle' && MONSTER.state !== 'stunned' && MONSTER.footstepTimer > stepInterval) {
+  const stepInterval = MONSTER.state === 'chase' ? 0.24 :
+                       MONSTER.state === 'investigate' ? 0.45 : 0.7;
+  const moving = !frozen && (MONSTER.state === 'chase' || MONSTER.state === 'investigate' || MONSTER.state === 'patrol');
+  if (moving && MONSTER.footstepTimer > stepInterval) {
     monsterFootstep(dist);
     MONSTER.footstepTimer = 0;
   }
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  PLAYER MOVEMENT
+//  STUN — called when player throws a bottle
 // ═══════════════════════════════════════════════════════════════════
-function updatePlayer(dt) {
-  if (P.hiding || P.noteReading || state.paused || !state.game) {
-    camera.position.set(P.x, P.y, P.z);
-    camera.rotation.y = P.yaw;
-    camera.rotation.x = P.pitch;
-    playerLight.position.set(P.x, P.y, P.z);
-    return;
-  }
-  const sY = Math.sin(P.yaw), cY = Math.cos(P.yaw);
-  let mx = 0, mz = 0;
-  if (P.keys['KeyW'] || P.keys['ArrowUp'])   { mx -= sY; mz -= cY; }
-  if (P.keys['KeyS'] || P.keys['ArrowDown']) { mx += sY; mz += cY; }
-  if (P.keys['KeyA'] || P.keys['ArrowLeft']) { mx -= cY; mz += sY; }
-  if (P.keys['KeyD'] || P.keys['ArrowRight']){ mx += cY; mz -= sY; }
-  if (JS.active) { mx += JS.x * (-sY) + JS.y * (-cY);
-                   mz += JS.x * (-cY) + JS.y * ( sY);
-                   // no: simpler to just use forward/strafe from joystick
-                 }
-  // gamepad movement (overrides if stick pressed)
-  const gp = pollGamepad(dt, P);
-  if (Math.abs(gp.mx) > 0.01 || Math.abs(gp.mz) > 0.01) {
-    mx = 0; mz = 0;
-    mx += gp.mx * cY + gp.mz * (-sY);
-    mz += gp.mx * (-sY) + gp.mz * (-cY);
-  }
-  if (JS.active) {
-    mx = JS.x * cY + JS.y * (-sY);
-    mz = JS.x * (-sY) + JS.y * (-cY);
-  }
-
-  const len = Math.sqrt(mx*mx + mz*mz);
-  const moving = len > 0.08;
-  const wantSprint = (P.keys['ShiftLeft'] || P.keys['ShiftRight'] || gp.sprint || mobSprintPressed);
-  const canSprint = wantSprint && moving && P.stamina > 0.02;
-  const sprinting = canSprint;
-  const speed = sprinting ? SPRINT_SPD : WALK_SPD;
-
-  if (moving) {
-    const invL = 1 / len;
-    const vx = mx * invL * speed * dt;
-    const vz = mz * invL * speed * dt;
-    if (inMap(P.x + vx, P.z, PLAYER_R)) P.x += vx;
-    if (inMap(P.x, P.z + vz, PLAYER_R)) P.z += vz;
-    P.bobPhase += dt * (sprinting ? 10 : 6);
-    const bob = Math.sin(P.bobPhase) * (sprinting ? 0.08 : 0.045);
-    P.y = 1.7 + bob;
-    // sprinting raises noise considerably
-    if (sprinting) raiseNoise(0.5);
-    else           raiseNoise(0.04);
-  } else {
-    P.y += (1.7 - P.y) * Math.min(1, dt * 6);
-  }
-  camera.position.set(P.x, P.y, P.z);
-  camera.rotation.y = P.yaw;
-  camera.rotation.x = P.pitch;
-  playerLight.position.set(P.x, P.y, P.z);
-
-  updateStamina(dt, sprinting, moving);
+export function stunMonster() {
+  if (!MONSTER.spawned || MONSTER.state === 'stunned') return;
+  MONSTER.state = 'stunned';
+  MONSTER.stateStartTime = performance.now();
+  MONSTER.stunCount++;
+  setTimeout(() => {
+    if (MONSTER.state === 'stunned') {
+      MONSTER.state = 'chase';
+      MONSTER.lungeUntil = performance.now() + 300;
+      MONSTER.lungeSpeed = 0;
+      MONSTER.lastSeenPlayer = performance.now();
+      chaseSting();
+    }
+  }, 4000);
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  LIGHTING — level settings + flicker
-// ═══════════════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════════════
-//  JUMPSCARE
+//  JUMPSCARE — 3D lunge to camera + canvas overlay + scream
 // ═══════════════════════════════════════════════════════════════════
 const jsCv = document.getElementById('jsC'), jsCtx = jsCv.getContext('2d');
 let jsAnim = false, jsStart = 0, jsCb = null;
+let jsLungeStartScale = null;
+let jsLungeStartPos = null;
+
 export function resizeJs() { jsCv.width = innerWidth; jsCv.height = innerHeight; }
 resizeJs();
+
 function drawJsFace(p) {
   const W = jsCv.width, H = jsCv.height;
-  jsCtx.clearRect(0,0,W,H);
-  const sh = (1 - p) * 25;
+  jsCtx.clearRect(0, 0, W, H);
+  const sh = (1 - p) * 22;
   jsCtx.save();
-  jsCtx.translate((Math.random()-.5)*sh, (Math.random()-.5)*sh);
-  jsCtx.fillStyle = '#000';
-  jsCtx.fillRect(-sh*2, -sh*2, W+sh*4, H+sh*4);
-  const cx = W/2, cy = H/2, r = Math.min(W,H) * .44 * (0.18 + p*0.9);
-  const grd = jsCtx.createRadialGradient(cx, cy, r*.1, cx, cy, r*2.2);
-  grd.addColorStop(0, 'rgba(160,10,10,.55)');
-  grd.addColorStop(1, 'rgba(0,0,0,0)');
-  jsCtx.fillStyle = grd; jsCtx.fillRect(0,0,W,H);
-  // head
-  jsCtx.fillStyle = '#b0a89a';
-  jsCtx.beginPath(); jsCtx.ellipse(cx, cy-r*.08, r*.78, r, 0, 0, Math.PI*2); jsCtx.fill();
-  // hair
-  jsCtx.fillStyle = '#05030a';
-  jsCtx.beginPath(); jsCtx.ellipse(cx, cy-r*.7, r*.85, r*.5, 0, 0, Math.PI*2); jsCtx.fill();
-  // eyes
-  if (p > .1) {
-    const ea = Math.min(1, (p-.1)/.22);
+  jsCtx.translate((Math.random() - .5) * sh, (Math.random() - .5) * sh);
+  // black shroud fading in
+  jsCtx.fillStyle = `rgba(0,0,0,${Math.min(1, p * 1.6)})`;
+  jsCtx.fillRect(-sh*2, -sh*2, W + sh*4, H + sh*4);
+  // red rim
+  const cx = W/2, cy = H/2, r = Math.min(W, H) * .46 * (0.18 + p * 0.95);
+  const rim = jsCtx.createRadialGradient(cx, cy, r * .1, cx, cy, r * 2.2);
+  rim.addColorStop(0, 'rgba(180,10,10,.55)');
+  rim.addColorStop(1, 'rgba(0,0,0,0)');
+  jsCtx.fillStyle = rim; jsCtx.fillRect(0, 0, W, H);
+  // pale Momo head
+  jsCtx.fillStyle = '#cbc5b8';
+  jsCtx.beginPath();
+  jsCtx.ellipse(cx, cy - r * .04, r * 1.0, r * 1.05, 0, 0, Math.PI*2);
+  jsCtx.fill();
+  // hair frame
+  jsCtx.fillStyle = '#04030a';
+  jsCtx.beginPath();
+  jsCtx.ellipse(cx, cy - r * .55, r * 1.15, r * .65, 0, 0, Math.PI*2);
+  jsCtx.fill();
+  // hair sides hanging
+  jsCtx.beginPath();
+  jsCtx.ellipse(cx - r * .85, cy + r * .15, r * .35, r * 1.1, 0, 0, Math.PI*2);
+  jsCtx.fill();
+  jsCtx.beginPath();
+  jsCtx.ellipse(cx + r * .85, cy + r * .15, r * .35, r * 1.1, 0, 0, Math.PI*2);
+  jsCtx.fill();
+  // big white eyes
+  if (p > .05) {
+    const ea = Math.min(1, (p - .05) / .2);
+    // sclera
+    jsCtx.fillStyle = `rgba(232,228,220,${ea})`;
+    jsCtx.beginPath(); jsCtx.ellipse(cx - r*.32, cy - r*.05, r*.22, r*.24, 0, 0, Math.PI*2); jsCtx.fill();
+    jsCtx.beginPath(); jsCtx.ellipse(cx + r*.32, cy - r*.05, r*.22, r*.24, 0, 0, Math.PI*2); jsCtx.fill();
+    // dark pupil
     jsCtx.fillStyle = `rgba(0,0,0,${ea})`;
-    jsCtx.beginPath(); jsCtx.ellipse(cx-r*.28, cy-r*.12, r*.18, r*.13, 0, 0, Math.PI*2); jsCtx.fill();
-    jsCtx.beginPath(); jsCtx.ellipse(cx+r*.28, cy-r*.12, r*.18, r*.13, 0, 0, Math.PI*2); jsCtx.fill();
-    const eg1 = jsCtx.createRadialGradient(cx-r*.28, cy-r*.12, 1, cx-r*.28, cy-r*.12, r*.15);
-    eg1.addColorStop(0, `rgba(255,80,40,${ea})`);
-    eg1.addColorStop(0.5, `rgba(200,10,0,${ea*0.8})`);
-    eg1.addColorStop(1, 'rgba(60,0,0,0)');
-    jsCtx.fillStyle = eg1; jsCtx.fillRect(cx-r*.45, cy-r*.28, r*.34, r*.32);
-    const eg2 = jsCtx.createRadialGradient(cx+r*.28, cy-r*.12, 1, cx+r*.28, cy-r*.12, r*.15);
-    eg2.addColorStop(0, `rgba(255,80,40,${ea})`);
-    eg2.addColorStop(0.5, `rgba(200,10,0,${ea*0.8})`);
-    eg2.addColorStop(1, 'rgba(60,0,0,0)');
-    jsCtx.fillStyle = eg2; jsCtx.fillRect(cx+r*.11, cy-r*.28, r*.34, r*.32);
+    jsCtx.beginPath(); jsCtx.ellipse(cx - r*.32, cy - r*.04, r*.085, r*.09, 0, 0, Math.PI*2); jsCtx.fill();
+    jsCtx.beginPath(); jsCtx.ellipse(cx + r*.32, cy - r*.04, r*.085, r*.09, 0, 0, Math.PI*2); jsCtx.fill();
+    // dark socket rim
+    jsCtx.strokeStyle = `rgba(60,30,30,${ea*.7})`;
+    jsCtx.lineWidth = r * .03;
+    jsCtx.beginPath(); jsCtx.ellipse(cx - r*.32, cy - r*.05, r*.23, r*.25, 0, 0, Math.PI*2); jsCtx.stroke();
+    jsCtx.beginPath(); jsCtx.ellipse(cx + r*.32, cy - r*.05, r*.23, r*.25, 0, 0, Math.PI*2); jsCtx.stroke();
   }
-  // mouth
-  if (p > .28) {
-    const ma = Math.min(1, (p-.28)/.22);
-    jsCtx.fillStyle = `rgba(10,0,0,${ma})`;
-    jsCtx.beginPath(); jsCtx.ellipse(cx, cy+r*.23, r*.5, r*.15, 0, 0, Math.PI*2); jsCtx.fill();
-    jsCtx.fillStyle = `rgba(200,186,160,${ma})`;
-    for (let i = 0; i < 11; i++) {
-      const tx = cx - r*.44 + i*r*.09;
-      jsCtx.beginPath();
-      jsCtx.moveTo(tx - r*.03, cy + r*.16);
-      jsCtx.lineTo(tx + r*.03, cy + r*.16);
-      jsCtx.lineTo(tx, cy + r*.32);
-      jsCtx.fill();
-    }
-    jsCtx.fillStyle = `rgba(200,16,10,${ma})`;
+  // wide grin
+  if (p > .15) {
+    const ma = Math.min(1, (p - .15) / .25);
+    jsCtx.strokeStyle = `rgba(80,20,20,${ma})`;
+    jsCtx.lineWidth = r * .04;
     jsCtx.beginPath();
-    jsCtx.moveTo(cx - r*.48, cy + r*.18);
-    jsCtx.bezierCurveTo(cx - r*.3, cy + r*.55, cx + r*.3, cy + r*.55, cx + r*.48, cy + r*.18);
-    jsCtx.bezierCurveTo(cx + r*.2, cy + r*.3, cx - r*.2, cy + r*.3, cx - r*.48, cy + r*.18);
+    jsCtx.moveTo(cx - r*.42, cy + r*.3);
+    jsCtx.bezierCurveTo(cx - r*.2, cy + r*.5, cx + r*.2, cy + r*.5, cx + r*.42, cy + r*.3);
+    jsCtx.stroke();
+    jsCtx.fillStyle = `rgba(60,15,15,${ma * .5})`;
+    jsCtx.beginPath();
+    jsCtx.moveTo(cx - r*.4, cy + r*.32);
+    jsCtx.bezierCurveTo(cx - r*.18, cy + r*.46, cx + r*.18, cy + r*.46, cx + r*.4, cy + r*.32);
+    jsCtx.bezierCurveTo(cx + r*.18, cy + r*.36, cx - r*.18, cy + r*.36, cx - r*.4, cy + r*.32);
     jsCtx.fill();
   }
-  if (p > .05) {
-    jsCtx.strokeStyle = `rgba(200,0,0,${p*.25})`;
+  // nostril dots
+  if (p > .12) {
+    jsCtx.fillStyle = `rgba(15,5,5,${Math.min(1,(p-.12)/.2)})`;
+    jsCtx.beginPath(); jsCtx.ellipse(cx - r*.06, cy + r*.12, r*.025, r*.04, 0, 0, Math.PI*2); jsCtx.fill();
+    jsCtx.beginPath(); jsCtx.ellipse(cx + r*.06, cy + r*.12, r*.025, r*.04, 0, 0, Math.PI*2); jsCtx.fill();
+  }
+  // scratch lines
+  if (p > .04) {
+    jsCtx.strokeStyle = `rgba(160,0,0,${p*.3})`;
     jsCtx.lineWidth = 1;
-    for (let i = 0; i < 22; i++) {
+    for (let i = 0; i < 26; i++) {
       jsCtx.beginPath();
-      jsCtx.moveTo(Math.random()*W, Math.random()*H);
-      jsCtx.lineTo(Math.random()*W, Math.random()*H);
+      jsCtx.moveTo(Math.random() * W, Math.random() * H);
+      jsCtx.lineTo(Math.random() * W, Math.random() * H);
       jsCtx.stroke();
     }
   }
+  // white flash spike at the start
+  if (p < 0.08) {
+    jsCtx.fillStyle = `rgba(255,255,255,${(0.08 - p) * 6})`;
+    jsCtx.fillRect(0, 0, W, H);
+  }
   jsCtx.restore();
 }
+
 export function runJumpscare(cb) {
   jsAnim = true; jsStart = performance.now(); jsCb = cb;
   document.getElementById('jsOver').style.display = 'block';
+  // capture monster current scale/pos so we can lunge it toward camera
+  if (MONSTER.root && MONSTER.root.visible) {
+    jsLungeStartScale = MONSTER.root.scale.clone();
+    jsLungeStartPos = MONSTER.root.position.clone();
+  } else {
+    jsLungeStartScale = null;
+    jsLungeStartPos = null;
+  }
   requestAnimationFrame(jsFrame);
 }
+
 function jsFrame(now) {
   if (!jsAnim) return;
-  const p = Math.min(1, (now - jsStart)/2300);
+  const elapsed = now - jsStart;
+  // 3D monster lunges fast toward camera in first 0.15s
+  if (jsLungeStartScale && jsLungeStartPos && MONSTER.root && MONSTER.root.visible) {
+    const lt = Math.min(1, elapsed / 150);
+    const s = 1 + lt * 7;
+    MONSTER.root.scale.set(jsLungeStartScale.x * s, jsLungeStartScale.y * s, jsLungeStartScale.z * s);
+    // lerp toward camera position
+    if (camera) {
+      MONSTER.root.position.x = jsLungeStartPos.x + (camera.position.x - jsLungeStartPos.x) * lt * 0.7;
+      MONSTER.root.position.z = jsLungeStartPos.z + (camera.position.z - jsLungeStartPos.z) * lt * 0.7;
+    }
+  }
+  const p = Math.min(1, elapsed / 2300);
   drawJsFace(p);
   if (p < 1) requestAnimationFrame(jsFrame);
-  else { jsAnim = false; document.getElementById('jsOver').style.display = 'none'; jsCb && jsCb(); }
+  else {
+    jsAnim = false;
+    document.getElementById('jsOver').style.display = 'none';
+    jsCb && jsCb();
+  }
 }

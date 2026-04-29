@@ -16,7 +16,8 @@ export const grid = [
 ];
 
 export const config = {
-  n: 1, name: "ZANGAR", spd: 2.4, lm: 1.00, fm: 0.80,
+  n: 1, name: "ZANGAR", spd: 3.2, lm: 1.00, fm: 0.80,
   flickerMul: 1.0, fogColor: 0x1a0f04, ambientColor: 0xffe2a0, hintKey: true,
   propTheme: 'mahalla',
+  pred: 0, giveup: 8000,
 };

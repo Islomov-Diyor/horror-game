@@ -9,7 +9,7 @@ export let keyGroup = null;
 export let doorGroup = null;
 export const hidingSpots    = []; // { mesh, gx, gz, worldX, worldZ, occupied }
 export const batteryPickups = []; // { group, gx, gz, worldX, worldZ, taken }
-export const notePickups    = []; // { group, gx, gz, worldX, worldZ, text, title, taken }
+export const notePickups    = []; // kept empty — notes removed
 export const monsterWaypoints = []; // { gx, gz }
 
 registerClearCallback(() => {
@@ -21,32 +21,53 @@ registerClearCallback(() => {
   monsterWaypoints.length = 0;
 });
 
-export const NOTE_LORE = [
-  { t:"1-KUN", b:"Ishdan qaytayotganimda\nnotanish eshikka kirdim.\nUndan keyin hech narsa o'zgarmadi...\nfaqat shovqinlar." },
-  { t:"QOCHISHGA URINISH", b:"Devorlar yurib turadi.\nXaritani chizish foydasiz.\nKalitlar bor — ular yashirilgan.\nOvoz qilma. U eshitadi." },
-  { t:"U HAQIDA", b:"Uni ko'rmadim, lekin ovozini\neshitdim. Nafas olmayapti,\nzaharlashmagan... o'ladi menimcha\nkeyingi marta chiqsam." },
-  { t:"OXIRGI TILAK", b:"Agar bu xatni topsangiz\nmen allaqachon yo'q.\nLocker'lar yordam beradi.\nBatareya — sizning eng yaxshi do'stingiz." },
-  { t:"QOIDALAR", b:"1. Yugurma (u eshitadi)\n2. Yorug'likni o'chir (ba'zan)\n3. Lockerga yashirin\n4. Kalitsiz chiqmaysan" },
-  { t:"XATA", b:"Chiroqni yoqdim. U qaradi.\nEndi u nima yerda ekanimni biladi.\nSensiz qochib bo'lmaydi.\nYur... men ustun qoldim." },
-  { t:"5-LEVEL", b:"Bu yerda yorug' yo'q.\nFaqat chiroq bor. Batareya\ntugasa — hammasi tugaydi.\nYur. Orqaga qaramay." },
-  { t:"SAVOL", b:"Nega men? Nega biz?\nBu joy meni tanlaganmi\nyoki men uni? Javob yo'q.\nFaqat eshiklar, kalitlar, va u." },
-];
+export const NOTE_LORE = [];
 
 export function buildKey() {
   keyGroup = new THREE.Group();
-  const body = new THREE.Mesh(
-    new THREE.OctahedronGeometry(0.22, 0),
-    new THREE.MeshStandardMaterial({ color: 0xffdd33, emissive: 0xffaa00, emissiveIntensity: 2.2, roughness: 0.15, metalness: 0.95 })
+  const goldMat = new THREE.MeshStandardMaterial({
+    color: 0xd4a017, emissive: 0x3a2200, emissiveIntensity: 0.55,
+    roughness: 0.25, metalness: 0.95
+  });
+  // shaft
+  const shaft = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.018, 0.018, 0.22, 10),
+    goldMat
   );
-  const stem = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.05, 0.05, 0.5, 8),
-    new THREE.MeshStandardMaterial({ color: 0xffcc22, emissive: 0xcc8800, emissiveIntensity: 1.2, roughness: 0.2, metalness: 0.9 })
+  shaft.rotation.z = Math.PI / 2;
+  keyGroup.add(shaft);
+  // bow (round head ring)
+  const bow = new THREE.Mesh(
+    new THREE.TorusGeometry(0.05, 0.014, 8, 18),
+    goldMat
   );
-  stem.position.y = -0.3;
-  stem.rotation.z = Math.PI/2;
-  keyGroup.add(body);
-  keyGroup.add(stem);
-  const glow = new THREE.PointLight(0xffaa00, 1.8, 5);
+  bow.position.set(-0.13, 0, 0);
+  bow.rotation.y = Math.PI / 2;
+  keyGroup.add(bow);
+  // teeth — two small notches near the tip
+  const tooth1 = new THREE.Mesh(
+    new THREE.BoxGeometry(0.025, 0.04, 0.018),
+    goldMat
+  );
+  tooth1.position.set(0.085, -0.024, 0);
+  keyGroup.add(tooth1);
+  const tooth2 = new THREE.Mesh(
+    new THREE.BoxGeometry(0.022, 0.028, 0.018),
+    goldMat
+  );
+  tooth2.position.set(0.055, -0.022, 0);
+  keyGroup.add(tooth2);
+  // tip
+  const tip = new THREE.Mesh(
+    new THREE.ConeGeometry(0.018, 0.04, 8),
+    goldMat
+  );
+  tip.position.set(0.118, 0, 0);
+  tip.rotation.z = -Math.PI / 2;
+  keyGroup.add(tip);
+  // faint glow
+  const glow = new THREE.PointLight(0xffcc55, 0.4, 1.8);
+  glow.position.y = 0.15;
   keyGroup.add(glow);
   levelGroup.add(keyGroup);
 }
@@ -54,30 +75,56 @@ export function buildKey() {
 export function buildDoor() {
   doorGroup = new THREE.Group();
   const doorMat = new THREE.MeshStandardMaterial({
-    color: 0x228833, emissive: 0x006622, emissiveIntensity: 0.6,
-    roughness: 0.45, metalness: 0.35
+    color: 0x2a8c44, emissive: 0x004822, emissiveIntensity: 0.4,
+    roughness: 0.55, metalness: 0.3
   });
-  const door = new THREE.Mesh(new THREE.BoxGeometry(2.0, 2.8, 0.16), doorMat);
-  door.position.y = 1.4;
+  // door slab — thinner since it sits flush against a wall
+  const door = new THREE.Mesh(new THREE.BoxGeometry(1.9, 2.7, 0.10), doorMat);
+  door.position.y = 1.35;
   doorGroup.add(door);
-  const frameMat = new THREE.MeshStandardMaterial({ color: 0x114422, roughness: 0.6 });
-  [[-1.05,1.4,0,0.1,2.9,0.2],[1.05,1.4,0,0.1,2.9,0.2],[0,2.85,0,2.2,0.1,0.2]].forEach(([x,y,z,w,h,d]) => {
-    const f = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), frameMat);
-    f.position.set(x,y,z); doorGroup.add(f);
+  // wood-grain panels
+  const panelMat = new THREE.MeshStandardMaterial({ color: 0x1c6630, roughness: 0.7 });
+  for (let i = 0; i < 2; i++) {
+    for (let j = 0; j < 2; j++) {
+      const panel = new THREE.Mesh(
+        new THREE.BoxGeometry(0.78, 1.05, 0.02),
+        panelMat
+      );
+      panel.position.set((i - 0.5) * 0.85, 0.95 + j * 1.1, 0.06);
+      doorGroup.add(panel);
+    }
+  }
+  // door frame (around the door)
+  const frameMat = new THREE.MeshStandardMaterial({ color: 0x0e3018, roughness: 0.7 });
+  const frameSpecs = [
+    [-1.05, 1.4, 0, 0.16, 2.95, 0.18], // left jamb
+    [ 1.05, 1.4, 0, 0.16, 2.95, 0.18], // right jamb
+    [ 0,    2.9, 0, 2.30, 0.16, 0.18], // top jamb
+  ];
+  frameSpecs.forEach(([x, y, z, w, h, d]) => {
+    const f = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), frameMat);
+    f.position.set(x, y, z); doorGroup.add(f);
   });
-  const doorSign = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.7, 0.45),
-    new THREE.MeshBasicMaterial({ map: signTex('QOCHISH','#ffffff','#008822'), transparent:true, depthWrite:false })
+  // "Chiqish" sign above the door
+  const sign = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.5, 0.4),
+    new THREE.MeshBasicMaterial({ map: signTex('CHIQISH', '#0e1a0f', '#5dff8a'), transparent: true, depthWrite: false })
   );
-  doorSign.position.set(0, 2.2, 0.11);
-  doorGroup.add(doorSign);
+  sign.position.set(0, 3.15, 0.06);
+  doorGroup.add(sign);
+  // sign light backlight
+  const signGlow = new THREE.PointLight(0x33ff77, 0.6, 3.5);
+  signGlow.position.set(0, 3.15, 0.4);
+  doorGroup.add(signGlow);
+  // handle
   const handle = new THREE.Mesh(
-    new THREE.SphereGeometry(0.08, 8, 6),
+    new THREE.SphereGeometry(0.07, 8, 6),
     new THREE.MeshStandardMaterial({ color: 0xddbb00, metalness: 0.9, roughness: 0.25 })
   );
-  handle.position.set(0.7, 1.4, 0.12);
+  handle.position.set(0.7, 1.35, 0.07);
   doorGroup.add(handle);
-  const glow = new THREE.PointLight(0x00ff55, 1.6, 6);
+  // soft green ambient glow
+  const glow = new THREE.PointLight(0x33ff77, 1.0, 5);
   glow.position.set(0, 1.5, 0.5);
   doorGroup.add(glow);
   levelGroup.add(doorGroup);

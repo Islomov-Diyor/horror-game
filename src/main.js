@@ -77,7 +77,7 @@ function levelComplete() {
     document.getElementById('finalWin').style.display = 'flex';
   } else {
     document.getElementById('lcTitle').textContent = `LEVEL ${LEVELS[state.currentLevel].n} TUGADI`;
-    let msg = `Vaqt: ${fmtTime(s)}\nXatlar: ${P.notesFoundThisLevel}/${P.notesTotalThisLevel}\nKeyingi level: ${LEVELS[state.currentLevel+1].name} (${LEVELS[state.currentLevel+1].n}/5)`;
+    let msg = `Vaqt: ${fmtTime(s)}\nKeyingi level: ${LEVELS[state.currentLevel+1].name} (${LEVELS[state.currentLevel+1].n}/5)`;
     document.getElementById('lcMsg').textContent = msg;
     document.getElementById('lcBest').textContent = newBest
       ? '★ YANGI REKORD!'
@@ -223,18 +223,47 @@ function resetState() {
   // floor tiles for placement, excluding spawn
   const floorTiles = allFloorTiles().filter(t => !(t.gx === SP.gx && t.gz === SP.gz));
 
-  // key — far from spawn
+  // key — far from spawn, sitting flat on the floor
   const kt = pickFarFloorTile([SP], 6);
   const kc = tileCenter(kt.gx, kt.gz);
   buildKey();
-  keyGroup.position.set(kc.x, 0.6, kc.z);
+  keyGroup.position.set(kc.x, 0.05, kc.z);
 
-  // door — far from both
-  const dt = pickFarFloorTile([SP, kt], 7);
+  // door — far from both, MUST be flush against a wall
+  const wallAdjacent = tilesAdjacentToWall().filter(t => {
+    if (t.gx === SP.gx && t.gz === SP.gz) return false;
+    if (t.gx === kt.gx && t.gz === kt.gz) return false;
+    const dSp = Math.abs(t.gx - SP.gx) + Math.abs(t.gz - SP.gz);
+    const dKey = Math.abs(t.gx - kt.gx) + Math.abs(t.gz - kt.gz);
+    return dSp >= 7 && dKey >= 4;
+  });
+  let dt;
+  if (wallAdjacent.length) {
+    dt = wallAdjacent[Math.floor(Math.random() * wallAdjacent.length)];
+  } else {
+    dt = pickFarFloorTile([SP, kt], 7);
+  }
   const dc = tileCenter(dt.gx, dt.gz);
   buildDoor();
-  doorGroup.position.set(dc.x, 0, dc.z);
-  doorGroup.rotation.y = Math.atan2(-dc.x, -dc.z);
+  // find which side has the wall — door faces away from wall
+  let wallDir = null;
+  for (const [dx, dz] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+    if (isWall(dt.gx + dx, dt.gz + dz)) { wallDir = [dx, dz]; break; }
+  }
+  if (wallDir) {
+    // place door flush against the wall, facing into the room
+    const offX = wallDir[0] * (TILE/2 - 0.08);
+    const offZ = wallDir[1] * (TILE/2 - 0.08);
+    doorGroup.position.set(dc.x + offX, 0, dc.z + offZ);
+    // rotate so door's +Z (the front) points away from wall
+    if      (wallDir[0] ===  1) doorGroup.rotation.y = -Math.PI / 2;
+    else if (wallDir[0] === -1) doorGroup.rotation.y =  Math.PI / 2;
+    else if (wallDir[1] ===  1) doorGroup.rotation.y =  Math.PI;
+    else                         doorGroup.rotation.y =  0;
+  } else {
+    doorGroup.position.set(dc.x, 0, dc.z);
+    doorGroup.rotation.y = Math.atan2(-dc.x, -dc.z);
+  }
 
   // hiding spots (3-5, adjacent to wall, far from spawn/key/door)
   const hideCandidates = tilesAdjacentToWall()
@@ -264,17 +293,9 @@ function resetState() {
     usedTiles.add(batteryPool[i].gx+'_'+batteryPool[i].gz);
   }
 
-  // notes (3 per level) using shuffled lore pool
-  const notePool = floorTiles.filter(t => !usedTiles.has(t.gx+'_'+t.gz));
-  shuffle(notePool);
-  const noteCount = 3;
-  const loreShuffled = NOTE_LORE.slice(); shuffle(loreShuffled);
-  P.notesTotalThisLevel = Math.min(noteCount, notePool.length);
+  // notes removed — players were confusing them with the key
+  P.notesTotalThisLevel = 0;
   P.notesFoundThisLevel = 0;
-  for (let i = 0; i < P.notesTotalThisLevel; i++) {
-    buildNote(notePool[i].gx, notePool[i].gz, loreShuffled[i % loreShuffled.length]);
-    usedTiles.add(notePool[i].gx+'_'+notePool[i].gz);
-  }
 
   // monster patrol waypoints (4 across map)
   const wpPool = floorTiles.slice();
@@ -333,10 +354,10 @@ function shuffle(a) {
 function updateKeyAndDoor(dt) {
   if (!state.game || state.paused || state.jsTriggered) return;
 
-  // Key visual
+  // Key visual — sits on the ground, slow Y-axis rotation
   if (keyGroup && keyGroup.visible) {
-    keyGroup.rotation.y += dt * 1.6;
-    keyGroup.position.y = 0.6 + Math.sin(performance.now()*0.002) * 0.12;
+    keyGroup.rotation.y += dt * 1.2;
+    keyGroup.position.y = 0.05 + Math.sin(performance.now()*0.002) * 0.015;
   }
   // Battery pickups rotate
   for (const b of batteryPickups) {
@@ -352,12 +373,6 @@ function updateKeyAndDoor(dt) {
       showHud('BATAREYA +50%', 1800);
     }
   }
-  // Note hover
-  for (const n of notePickups) {
-    if (n.taken) continue;
-    n.group.position.y = 0.01 + Math.sin(performance.now()*0.002 + n.gx*0.3) * 0.05;
-  }
-
   // KEY pickup
   if (!P.hasKey && keyGroup && keyGroup.visible) {
     const kd = Math.hypot(P.x - keyGroup.position.x, P.z - keyGroup.position.z);
@@ -470,15 +485,21 @@ function updatePlayer(dt) {
   const speed = sprinting ? SPRINT_SPD : WALK_SPD;
   if (moving) {
     const invL = 1 / len;
-    const vx = mx * invL * speed * dt;
-    const vz = mz * invL * speed * dt;
+    const dirX = mx * invL;
+    const dirZ = mz * invL;
+    const vx = dirX * speed * dt;
+    const vz = dirZ * speed * dt;
     if (inMap(P.x + vx, P.z, PLAYER_R)) P.x += vx;
     if (inMap(P.x, P.z + vz, PLAYER_R)) P.z += vz;
+    // velocity in world units / second — used by monster prediction
+    P.vx = dirX * speed;
+    P.vz = dirZ * speed;
     P.bobPhase += dt * (sprinting ? 10 : 6);
     P.y = 1.7 + Math.sin(P.bobPhase) * (sprinting ? 0.08 : 0.045);
     if (sprinting) P.noiseLevel = Math.max(P.noiseLevel, 0.5);
     else           P.noiseLevel = Math.max(P.noiseLevel, 0.04);
   } else {
+    P.vx *= 0.6; P.vz *= 0.6;
     P.y += (1.7 - P.y) * Math.min(1, dt * 6);
   }
   camera.position.set(P.x, P.y, P.z);
@@ -530,17 +551,6 @@ function closeNote() {
 function handleInteract() {
   if (!state.game || state.paused) return;
   if (P.hiding) { exitHide(); return; }
-  for (const n of notePickups) {
-    if (n.taken) continue;
-    if (Math.hypot(P.x - n.worldX, P.z - n.worldZ) < 1.0) {
-      n.taken = true; n.group.visible = false;
-      P.notesFoundThisLevel++;
-      updateNoteCount();
-      notePickupSound();
-      openNote(n);
-      return;
-    }
-  }
   const h = findNearestHideSpot();
   if (h && !h.occupied) { enterHide(h); return; }
 }
@@ -549,18 +559,13 @@ function updateInteractHud() {
     document.getElementById('interactHud').style.display = 'none'; return;
   }
   const hud = document.getElementById('interactHud');
-  for (const n of notePickups) {
-    if (n.taken) continue;
-    if (Math.hypot(P.x - n.worldX, P.z - n.worldZ) < 1.0) {
-      hud.textContent = "[ E ] — xatni o'qish"; hud.style.display = 'block'; return;
-    }
-  }
   const h = findNearestHideSpot();
   if (h && !h.occupied) { hud.textContent = '[ E ] — yashirinish'; hud.style.display = 'block'; return; }
   hud.style.display = 'none';
 }
 function updateNoteCount() {
-  document.getElementById('noteCount').textContent = P.notesFoundThisLevel + ' / ' + P.notesTotalThisLevel;
+  const el = document.getElementById('noteCount');
+  if (el) el.textContent = '0 / 0';
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -596,7 +601,7 @@ function loop(now) {
     updateInteractHud();
     // timer hud
     const s = Math.floor((Date.now() - state.levelStartTime)/1000);
-    document.getElementById('timerHud').textContent = `⏱ ${fmtTime(s)}   🗒 ${P.notesFoundThisLevel}/${P.notesTotalThisLevel}${P.hasKey?'   🔑':''}`;
+    document.getElementById('timerHud').textContent = `⏱ ${fmtTime(s)}${P.hasKey?'   🔑':''}`;
   }
   // chase-start flash + shake
   const isChasing = MONSTER.state === 'chase' && MONSTER.spawned;

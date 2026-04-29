@@ -3,22 +3,30 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>BACKROOMS — Qochish (5 Level)</title>
+<title>AZOB OSTIDA</title>
 <link rel="stylesheet" href="/src/style.css">
 </head>
 <body>
 
 <div id="startScreen">
-  <div id="startTitle">BACKROOMS</div>
-  <div id="startSub">QOCHISH · 5 LEVEL</div>
-  <button class="menuBtn primary" onclick="event.stopPropagation();startGame()">▶ O'YINNI BOSHLASH</button>
-  <button class="menuBtn small" onclick="event.stopPropagation();openSettings()">⚙ SOZLAMALAR</button>
-  <button class="menuBtn small" onclick="event.stopPropagation();downloadGame()">⬇ YUKLAB OLISH</button>
-  <div id="instructions">
-    <b>WASD</b> — yurish · <b>SHIFT</b> — yugurish · <b>MOUSE</b> — qarash<br>
-    <b>F</b> — chiroq · <b>E</b> — olish / yashirinish / xatni o'qish<br>
-    <b>ESC</b> — pauza · Har levelda <b>kalit</b>ni top, <b>yashil eshik</b>ka qoch.<br>
-    Kalit olgandan keyin <b>u</b> quvadi. Lockerlarga yashirin. Batareyalarni yig'.
+  <div id="startBg">
+    <div id="bgFog"></div>
+    <div id="bgGrain"></div>
+    <div id="bgScratch"></div>
+    <div id="bgEyes"></div>
+    <div id="bgFlicker"></div>
+  </div>
+  <div id="startContent">
+    <div id="startTitle">AZOB OSTIDA</div>
+    <div id="startSub">5 DARAJA · QOCHISH MUMKIN EMAS... DEYARLI</div>
+    <button class="menuBtn primary" onclick="event.stopPropagation();startGame()">▶ AZOBNI BOSHLA</button>
+    <button class="menuBtn small" onclick="event.stopPropagation();openSettings()">⚙ SOZLAMALAR</button>
+    <button class="menuBtn small" onclick="event.stopPropagation();downloadGame()">⬇ YUKLAB OLISH</button>
+    <div id="instructions">
+      <b>WASD</b> — yurish · <b>SHIFT</b> — yugurish · <b>MOUSE</b> — atrofga qarash · <b>F</b> — chiroq · <b>E</b> — yashirinish<br>
+      Oltin <b>kalit</b>ni top va <b>CHIQISH</b> eshigiga qoch. Kalitni olganing zahoti — <b>u</b> uyg'onadi.<br>
+      Yugurma — eshitadi. Lockerga yashirin — nafasingni tut. Batareyani saqla.
+    </div>
   </div>
 </div>
 
@@ -91,7 +99,7 @@
 
 <div id="bottomBar">
   <div id="keyHudNew" class="hudIcon"><span class="label">🔑 KALIT</span></div>
-  <div id="noteHud" class="hudIcon"><span class="label">📄 XAT</span><span id="noteCount">0 / 0</span></div>
+  <div id="noteHud" class="hudIcon" style="display:none"><span class="label">📄 XAT</span><span id="noteCount">0 / 0</span></div>
   <div id="flashIco" class="hudIcon"><span class="label">🔦 ON</span>
     <div class="bar"><div class="fill" id="batteryFill" style="width:100%"></div></div></div>
   <div class="hudIcon"><span class="label">⚡ QUVVAT</span>

@@ -218,17 +218,37 @@ export function chaseSting() {
 }
 export function deathScream() {
   if (!AC) return;
-  const o = AC.createOscillator(), g = AC.createGain(), f = AC.createBiquadFilter();
-  o.type = 'sawtooth';
-  o.frequency.setValueAtTime(380, AC.currentTime);
-  o.frequency.linearRampToValueAtTime(820, AC.currentTime + 0.4);
-  o.frequency.linearRampToValueAtTime(180, AC.currentTime + 1.6);
-  f.type = 'bandpass'; f.frequency.value = 900; f.Q.value = 2;
-  g.gain.setValueAtTime(0, AC.currentTime);
-  g.gain.linearRampToValueAtTime(0.18, AC.currentTime + 0.2);
-  g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + 2.0);
-  o.connect(f); f.connect(g); g.connect(masterGain);
-  o.start(); o.stop(AC.currentTime + 2.0);
+  // High-pitched layered girl scream — multiple detuned saws + noise burst
+  const t0 = AC.currentTime;
+  const layers = [
+    { f1: 880,  f2: 1400, f3: 520, vol: 0.22, type: 'sawtooth', filter: 1800, q: 3 },
+    { f1: 1240, f2: 1900, f3: 700, vol: 0.16, type: 'sawtooth', filter: 2600, q: 4 },
+    { f1: 660,  f2: 1100, f3: 380, vol: 0.18, type: 'square',   filter: 1300, q: 2 },
+  ];
+  for (const L of layers) {
+    const o = AC.createOscillator(), g = AC.createGain(), f = AC.createBiquadFilter();
+    o.type = L.type;
+    o.frequency.setValueAtTime(L.f1, t0);
+    o.frequency.linearRampToValueAtTime(L.f2, t0 + 0.18);
+    o.frequency.linearRampToValueAtTime(L.f1 * 0.95, t0 + 0.6);
+    o.frequency.linearRampToValueAtTime(L.f3, t0 + 1.9);
+    // tremolo (vocal warble)
+    const lfo = AC.createOscillator(), lfoGain = AC.createGain();
+    lfo.frequency.value = 14 + Math.random() * 6;
+    lfoGain.gain.value = L.f1 * 0.04;
+    lfo.connect(lfoGain); lfoGain.connect(o.frequency);
+    f.type = 'bandpass'; f.frequency.value = L.filter; f.Q.value = L.q;
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(L.vol, t0 + 0.05);
+    g.gain.linearRampToValueAtTime(L.vol * 0.85, t0 + 0.7);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 2.2);
+    o.connect(f); f.connect(g); g.connect(masterGain);
+    o.start(t0); o.stop(t0 + 2.3);
+    lfo.start(t0); lfo.stop(t0 + 2.3);
+  }
+  // breath/rasp noise
+  noise(0.18, 0.5, 1200, 4000);
+  setTimeout(() => noise(0.12, 0.4, 800, 3000), 300);
 }
 let footstepAlt = false;
 export function monsterFootstep(dist) {
