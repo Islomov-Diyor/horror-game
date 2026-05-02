@@ -13,7 +13,7 @@ import { keyGroup, doorGroup, hidingSpots, batteryPickups, notePickups, monsterW
 import { initAudio, setMasterVolume, noise, osc, startAmbient, stopAmbient, startTenseLayer, stopTenseLayer, startChaseLayer, stopChaseLayer, startMonsterSound, stopMonsterSound, updateMonsterAudio, updateMusicMix, heartbeat, keyPickupSound, batteryPickupSound, notePickupSound, doorOpenSound, flashClick, lockerClose, chaseSting, deathScream, isAudioReady } from './audio/manager.js';
 import { JS, mobSprintPressed, pollGamepad, setupInput } from './input/index.js';
 
-import { MONSTER, buildMonster, animateMonster, monsterSpawnBehindPlayer, updateMonsterAI, runJumpscare, resizeJs, setTriggerGameOver } from './monster/index.js';
+import { MONSTER, bootMonster, animateMonster, monsterSpawnBehindPlayer, updateMonsterAI, runJumpscare, resizeJs, setTriggerGameOver } from './monster/index.js';
 import { fxRT, fxScene, fxCam, fxMat, initPostFX, resizePostFX } from './core/postfx.js';
 import { P } from './player/index.js';
 
@@ -307,7 +307,7 @@ function resetState() {
   // monster — placed far away, not active until key picked up
   MONSTER.spawned = false;
   MONSTER.state = 'idle';
-  MONSTER.root.visible = false;
+  if (MONSTER.root) MONSTER.root.visible = false;
   MONSTER.targetPath = null;
   MONSTER.pathIndex = 0;
 
@@ -644,7 +644,42 @@ function loop(now) {
 // ═══════════════════════════════════════════════════════════════════
 //  BOOT
 // ═══════════════════════════════════════════════════════════════════
-function startGame() {
+const monsterReady = bootMonster();
+
+function showMonsterLoading(visible) {
+  const el = document.getElementById('monsterLoading');
+  if (el) el.style.display = visible ? 'flex' : 'none';
+}
+
+function showMonsterError(msg) {
+  const el = document.getElementById('monsterError');
+  if (!el) return;
+  const m = el.querySelector('.errMsg');
+  if (m) m.textContent = msg || 'Monster yuklanmadi';
+  el.style.display = 'flex';
+}
+
+let _starting = false;
+async function startGame() {
+  if (_starting || state.game) return;
+  _starting = true;
+  if (MONSTER.loadError) {
+    _starting = false;
+    showMonsterError(`Monster yuklanmadi: ${MONSTER.loadError.message || MONSTER.loadError}`);
+    return;
+  }
+  if (!MONSTER.ready) {
+    showMonsterLoading(true);
+    try {
+      await monsterReady;
+    } catch (err) {
+      _starting = false;
+      showMonsterLoading(false);
+      showMonsterError(`Monster yuklanmadi: ${err.message || err}`);
+      return;
+    }
+    showMonsterLoading(false);
+  }
   initAudio();
   document.getElementById('startScreen').style.display = 'none';
   cvEl.requestPointerLock();
@@ -653,6 +688,7 @@ function startGame() {
   resetState();
   last = performance.now();
   if (!raf) loop(last);
+  _starting = false;
 }
 
 function downloadGame() {
@@ -669,7 +705,9 @@ document.getElementById('startScreen').addEventListener('click', e => {
 });
 
 initPostFX();
-buildMonster();
+monsterReady.catch(err => {
+  showMonsterError(`Monster yuklanmadi: ${err.message || err}`);
+});
 
 window.addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
